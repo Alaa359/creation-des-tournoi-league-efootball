@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { api, type Tournament } from './api';
 
 /**
- * Charge un tournoi puis le maintient à jour via le flux SSE.
- * Toute mutation côté organisateur déclenche un refetch automatique chez tous les spectateurs.
+ * Charge un tournoi puis le maintient à jour par rafraîchissement périodique
+ * (compatible hébergement serverless type Netlify, sans connexion persistante).
+ * Le polling se met en pause quand l'onglet est masqué et rafraîchit au retour.
  */
 export function useLiveTournament(id: string | undefined) {
   const [tournament, setTournament] = useState<Tournament | null>(null);
@@ -13,31 +14,47 @@ export function useLiveTournament(id: string | undefined) {
   useEffect(() => {
     if (!id) return;
     let disposed = false;
+    let inFlight = false;
 
     const load = (): void => {
+      if (inFlight) return;
+      inFlight = true;
       api
         .getTournament(id)
         .then((t) => {
           if (!disposed) {
             setTournament(t);
             setError(null);
+            setLive(true);
           }
         })
         .catch((e: Error) => {
-          if (!disposed) setError(e.message);
+          if (!disposed) {
+            setError(e.message);
+            setLive(false);
+          }
+        })
+        .finally(() => {
+          inFlight = false;
         });
     };
 
     load();
 
-    const es = new EventSource(`/api/events/${id}`);
-    es.onopen = () => setLive(true);
-    es.onerror = () => setLive(false);
-    es.addEventListener('update', load);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') load();
+    }, 4000);
+    const onVisible = (): void => {
+      if (document.visibilityState === 'visible') load();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
 
     return () => {
       disposed = true;
-      es.close();
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
     };
   }, [id]);
 

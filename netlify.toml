@@ -1,0 +1,21 @@
+# Déploiement Netlify — site complet (SPA React + API serverless + stockage Blobs)
+
+[build]
+  command = "npm install --include=dev && npm run build"
+  publish = "web/dist"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+# Toutes les routes /api/* sont traitées par la fonction « api »
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+
+# Fallback SPA : les routes /t/:id etc. servent index.html
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
