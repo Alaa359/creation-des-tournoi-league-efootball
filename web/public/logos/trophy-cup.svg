@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 232">
+  <defs>
+    <linearGradient id="cupGold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fffbeb"/>
+      <stop offset=".3" stop-color="#fde047"/>
+      <stop offset=".65" stop-color="#f59e0b"/>
+      <stop offset="1" stop-color="#92400e"/>
+    </linearGradient>
+    <linearGradient id="cupSoft" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fef3c7"/>
+      <stop offset="1" stop-color="#d97706"/>
+    </linearGradient>
+    <linearGradient id="cupDeep" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fbbf24"/>
+      <stop offset="1" stop-color="#78350f"/>
+    </linearGradient>
+    <linearGradient id="ribbonRed" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f87171"/>
+      <stop offset=".5" stop-color="#dc2626"/>
+      <stop offset="1" stop-color="#991b1b"/>
+    </linearGradient>
+  </defs>
+  <path d="M46 52 Q10 56 16 88 Q21 114 56 121" fill="none" stroke="url(#cupDeep)" stroke-width="12" stroke-linecap="round"/>
+  <path d="M154 52 Q190 56 184 88 Q179 114 144 121" fill="none" stroke="url(#cupDeep)" stroke-width="12" stroke-linecap="round"/>
+  <path d="M44 32 H156 L150 98 C146 130 126 150 100 152 C74 150 54 130 50 98 Z" fill="url(#cupGold)" stroke="#78350f" stroke-width="2.5"/>
+  <ellipse cx="100" cy="32" rx="56" ry="11" fill="url(#cupSoft)" stroke="#78350f" stroke-width="2.5"/>
+  <path d="M61 48 C55 78 63 112 84 131" stroke="#fffbeb" stroke-width="7" fill="none" opacity=".38" stroke-linecap="round"/>
+  <ellipse cx="100" cy="154" rx="14" ry="5.5" fill="url(#cupSoft)" stroke="#78350f" stroke-width="2"/>
+  <path d="M82 157 H118 L114 171 H86 Z" fill="url(#ribbonRed)" stroke="#7f1d1d" stroke-width="1.5"/>
+  <polygon points="87,169 66,204 76,200 72,214 93,175" fill="url(#ribbonRed)" stroke="#7f1d1d" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="113,169 134,204 124,200 128,214 107,175" fill="url(#ribbonRed)" stroke="#7f1d1d" stroke-width="1.5" stroke-linejoin="round"/>
+  <path d="M94 170 L106 170 L102 192 L98 192 Z" fill="url(#cupGold)" stroke="#78350f" stroke-width="2"/>
+  <rect x="72" y="191" width="56" height="12" rx="4" fill="url(#cupSoft)" stroke="#78350f" stroke-width="2"/>
+  <rect x="60" y="202" width="80" height="16" rx="6" fill="url(#cupDeep)" stroke="#78350f" stroke-width="2"/>
+  <rect x="52" y="217" width="96" height="13" rx="5" fill="url(#cupGold)" stroke="#78350f" stroke-width="2"/>
+</svg>

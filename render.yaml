@@ -1,0 +1,23 @@
+# Blueprint Render — déploie le site complet (API Express + SPA React) sur un seul service.
+# Doc : https://docs.render.com/blueprint-spec
+services:
+  - type: web
+    name: championnat-rafraf
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      # Version de Node alignée sur le projet (>= 22)
+      - key: NODE_VERSION
+        value: 24.19.0
+      # Mot de passe organisateur : valeur à saisir dans le dashboard Render
+      # au moment du déploiement (jamais stockée dans ce fichier).
+      - key: ADMIN_PASSWORD
+        sync: false
+      # Secret HMAC généré une seule fois et conservé entre les redéploiements
+      # (les sessions admin ne sont pas invalidées à chaque restart).
+      - key: SESSION_SECRET
+        generateValue: true

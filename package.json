@@ -1,0 +1,24 @@
+{
+    "name":  "efootball-cup",
+    "version":  "0.1.0",
+    "private":  true,
+    "description":  "Tournois eFootball entre amis â€” League \u0026 Knockout, serveur local LAN",
+    "workspaces":  [
+                       "server",
+                       "web"
+                   ],
+    "engines":  {
+                    "node":  "\u003e=22"
+                },
+    "scripts":  {
+                    "dev":  "concurrently -k -n api,web -c green,cyan \"npm run dev -w server\" \"npm run dev -w web\"",
+                    "build":  "npm run build -w web",
+                    "start":  "npm run start -w server",
+                    "test":  "npm run test -w server",
+                    "typecheck":  "npm run typecheck -w server \u0026\u0026 npm run typecheck -w web",
+                    "bg":  "npm run bg -w web"
+                },
+    "devDependencies":  {
+                            "concurrently":  "^10.0.5"
+                        }
+}

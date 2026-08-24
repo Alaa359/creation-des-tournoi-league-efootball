@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 212">
+  <defs>
+    <linearGradient id="goldMain" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fef9c3"/>
+      <stop offset=".35" stop-color="#fde047"/>
+      <stop offset=".7" stop-color="#f59e0b"/>
+      <stop offset="1" stop-color="#b45309"/>
+    </linearGradient>
+    <linearGradient id="goldSoft" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fef08a"/>
+      <stop offset="1" stop-color="#d97706"/>
+    </linearGradient>
+    <linearGradient id="goldDeep" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fbbf24"/>
+      <stop offset="1" stop-color="#92400e"/>
+    </linearGradient>
+  </defs>
+  <path d="M44 56 Q14 58 18 84 Q22 108 52 112 Q60 113 64 108" fill="none" stroke="url(#goldDeep)" stroke-width="12" stroke-linecap="round"/>
+  <path d="M156 56 Q186 58 182 84 Q178 108 148 112 Q140 113 136 108" fill="none" stroke="url(#goldDeep)" stroke-width="12" stroke-linecap="round"/>
+  <path d="M46 34 H154 L148 94 C144 124 124 142 100 144 C76 142 56 124 52 94 Z" fill="url(#goldMain)" stroke="#78350f" stroke-width="2.5"/>
+  <ellipse cx="100" cy="34" rx="54" ry="10" fill="url(#goldSoft)" stroke="#78350f" stroke-width="2.5"/>
+  <path d="M63 50 C58 76 66 104 84 121" stroke="#fffbeb" stroke-width="7" fill="none" opacity=".4" stroke-linecap="round"/>
+  <polygon points="100,69 103.8,80.7 116.2,80.7 106.2,88 110,99.8 100,92.5 90,99.8 93.8,88 83.8,80.7 96.2,80.7" fill="#fffbeb" opacity=".95"/>
+  <ellipse cx="100" cy="145" rx="13" ry="5" fill="url(#goldSoft)" stroke="#78350f" stroke-width="2"/>
+  <path d="M91 146 L109 146 L105 170 L95 170 Z" fill="url(#goldMain)" stroke="#78350f" stroke-width="2"/>
+  <rect x="70" y="169" width="60" height="12" rx="5" fill="url(#goldSoft)" stroke="#78350f" stroke-width="2"/>
+  <rect x="58" y="180" width="84" height="16" rx="6" fill="url(#goldDeep)" stroke="#78350f" stroke-width="2"/>
+</svg>
