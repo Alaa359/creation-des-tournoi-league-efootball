@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
 import { config } from '../core/config';
 import { logger } from '../core/logger';
+import { clearLoginFailures, recordLoginFailure } from './rateLimit';
 
 const COOKIE = 'efc_admin';
 const TTL_MS = 12 * 60 * 60 * 1000;
@@ -45,10 +46,12 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction): v
 export function loginHandler(req: Request, res: Response): void {
   const password = req.body?.password;
   if (typeof password !== 'string' || password !== config.adminPassword) {
+    recordLoginFailure(req);
     logger.warn('Échec de connexion organisateur');
     res.status(401).json({ error: 'Mot de passe incorrect' });
     return;
   }
+  clearLoginFailures(req);
   const exp = Date.now() + TTL_MS;
   res.setHeader(
     'Set-Cookie',

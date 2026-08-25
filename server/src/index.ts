@@ -10,6 +10,7 @@ import { mountStatic } from './http/static';
 
 const app = express();
 app.disable('x-powered-by');
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '100kb' }));
 
 // Journal d'accès API (Protocole n°4) — une ligne info par requête, SSE exclu.

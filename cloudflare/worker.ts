@@ -1,4 +1,5 @@
 import { handleApi, type CloudState, type CloudStore } from '../server/src/cloud/api';
+import type { LoginRateStore } from '../server/src/cloud/rateLimit';
 
 /**
  * Point d'entrée Cloudflare Worker : sert TOUTES les routes /api/*.
@@ -8,8 +9,8 @@ import { handleApi, type CloudState, type CloudStore } from '../server/src/cloud
 
 /** Interface minimale du KV Cloudflare (évite une dépendance de typage). */
 interface KvLike {
-  get(key: string, type: 'json'): Promise<unknown>;
-  put(key: string, value: string): Promise<void>;
+  get(key: string, type: 'json' | 'text'): Promise<unknown>;
+  put(key: string, value: string, opts?: { expirationTtl?: number }): Promise<void>;
 }
 
 export interface Env {
@@ -29,11 +30,29 @@ function kvStore(kv: KvLike): CloudStore {
   };
 }
 
+function kvRateLimitStore(kv: KvLike): LoginRateStore {
+  return {
+    async get(key) {
+      return ((await kv.get(key, 'json')) as { count: number; resetAt: number } | null) ?? null;
+    },
+    async put(key, value, ttlSeconds) {
+      await kv.put(key, JSON.stringify(value), { expirationTtl: ttlSeconds });
+    },
+  };
+}
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
+    if (!env.ADMIN_PASSWORD || !env.SESSION_SECRET) {
+      console.error(
+        'ADMIN_PASSWORD / SESSION_SECRET manquants : définissez-les via `npx wrangler secret put`.',
+      );
+      return new Response('Configuration serveur incomplète', { status: 500 });
+    }
     return handleApi(req, kvStore(env.STATE), {
-      adminPassword: env.ADMIN_PASSWORD ?? 'admin1234',
-      sessionSecret: env.SESSION_SECRET ?? '',
+      adminPassword: env.ADMIN_PASSWORD,
+      sessionSecret: env.SESSION_SECRET,
+      rateStore: kvRateLimitStore(env.STATE),
     });
   },
 };

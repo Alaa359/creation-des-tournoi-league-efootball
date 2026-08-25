@@ -85,6 +85,35 @@ describe('cloud api — santé & auth', () => {
     const yes = await handleApi(req('/auth/me', { headers: { cookie } }), memoryStore(), env);
     expect(((await yes.json()) as { admin: boolean }).admin).toBe(true);
   });
+
+  it('login bloqué en 429 après 5 échecs depuis la même IP (même avec le bon mot de passe)', async () => {
+    const attempt = () =>
+      handleApi(
+        req('/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.7' },
+          body: JSON.stringify({ password: 'mauvais' }),
+        }),
+        memoryStore(),
+        env,
+      );
+
+    for (let i = 0; i < 5; i++) {
+      expect((await attempt()).status).toBe(401);
+    }
+    expect((await attempt()).status).toBe(429);
+
+    const ok = await handleApi(
+      req('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.7' },
+        body: JSON.stringify({ password: env.adminPassword }),
+      }),
+      memoryStore(),
+      env,
+    );
+    expect(ok.status).toBe(429);
+  });
 });
 
 describe('cloud api — cycle de vie league complet', () => {

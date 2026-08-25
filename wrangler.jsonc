@@ -15,8 +15,7 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
   },
-  "vars": {
-    "ADMIN_PASSWORD": "Rafraf-Cup-2026!eFoot",
-    "SESSION_SECRET": "12c284e921ea4b0f9a0da7bc3a016579e55b606aa8724178957080ad053b99bc"
-  }
+  // Secrets (ADMIN_PASSWORD, SESSION_SECRET) : `npx wrangler secret put ADMIN_PASSWORD`
+  // en production, et fichier .dev.vars ignoré par git en local.
+  "vars": {}
 }

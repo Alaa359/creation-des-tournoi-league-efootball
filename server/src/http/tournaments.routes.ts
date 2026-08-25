@@ -25,6 +25,7 @@ import {
   type Tournament,
 } from '../domain/types';
 import { loginHandler, logoutHandler, meHandler, requireAdmin } from './auth';
+import { loginRateLimiter } from './rateLimit';
 import { broadcastUpdate, sseHandler } from './sse';
 
 export const apiRouter = Router();
@@ -33,7 +34,7 @@ apiRouter.get('/health', (_req, res) => res.json({ ok: true }));
 
 apiRouter.get('/events/:tournamentId', sseHandler);
 
-apiRouter.post('/auth/login', loginHandler);
+apiRouter.post('/auth/login', loginRateLimiter, loginHandler);
 apiRouter.post('/auth/logout', logoutHandler);
 apiRouter.get('/auth/me', meHandler);
 

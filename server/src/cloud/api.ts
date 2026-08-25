@@ -22,6 +22,14 @@ import {
   type Tournament,
 } from '../domain/types';
 import { HttpError } from '../core/errors';
+import {
+  assertLoginAllowed,
+  clearLoginFailures,
+  clientIp,
+  memoryLoginRateStore,
+  recordLoginFailure,
+  type LoginRateStore,
+} from './rateLimit';
 
 /** État persisté (équivalent de data/db.json, ici dans Netlify Blobs). */
 export interface CloudState {
@@ -37,7 +45,10 @@ export interface CloudStore {
 export interface CloudEnv {
   adminPassword: string;
   sessionSecret: string;
+  rateStore?: LoginRateStore;
 }
+
+const fallbackRateStore = memoryLoginRateStore();
 
 // ── Auth organisateur : cookie HMAC « expiration.signature » ────────────────
 
@@ -176,10 +187,18 @@ export async function handleApiRoute(
 
   // ── Auth ──
   if (route === '/auth/login' && method === 'POST') {
-    const body = (await readJsonBody(req)) as { password?: unknown };
-    if (typeof body.password !== 'string' || body.password !== env.adminPassword) {
+    const rateStore = env.rateStore ?? fallbackRateStore;
+    const ip = clientIp(req);
+    await assertLoginAllowed(rateStore, ip);
+    if (!env.adminPassword) {
       return json({ error: 'Mot de passe incorrect' }, { status: 401 });
     }
+    const body = (await readJsonBody(req)) as { password?: unknown };
+    if (typeof body.password !== 'string' || body.password !== env.adminPassword) {
+      await recordLoginFailure(rateStore, ip);
+      return json({ error: 'Mot de passe incorrect' }, { status: 401 });
+    }
+    await clearLoginFailures(rateStore, ip);
     const exp = Date.now() + TTL_MS;
     return json(
       { ok: true },
