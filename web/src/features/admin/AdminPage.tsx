@@ -88,7 +88,69 @@ function MatchRow({ t, m, legLabel, ko }: { t: Tournament; m: Match; legLabel?: 
           {m.homePens !== undefined ? ` (tab ${m.homePens}-${m.awayPens})` : ''}
         </p>
       )}
-      <div className="flex flex-wrap items-center gap-2">
+      {/* ── Mobile : un joueur par ligne, grandes cases faciles à remplir ── */}
+      <div className="space-y-2 sm:hidden">
+        {[
+          { label: homeName, field: 'h' as const, aria: `Buts ${homeName}` },
+          { label: awayName, field: 'a' as const, aria: `Buts ${awayName}` },
+        ].map((row) => (
+          <div key={row.field} className="flex items-center justify-between gap-3 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2">
+            <span className="min-w-0 flex-1 truncate text-sm font-bold">{row.label}</span>
+            <input
+              className="score-input !h-12 !w-16 !text-2xl"
+              type="number"
+              min={0}
+              max={99}
+              inputMode="numeric"
+              placeholder="–"
+              aria-label={row.aria}
+              value={draft[row.field]}
+              onChange={(e) => setDraft((d) => ({ ...d, [row.field]: e.target.value }))}
+            />
+          </div>
+        ))}
+
+        {tie && (
+          <div className="flex items-center justify-center gap-3 rounded-xl border border-amber-300/20 bg-amber-300/5 px-3 py-2">
+            <span className="text-xs font-bold tracking-wider text-amber-300 uppercase">Tirs au but</span>
+            <input
+              className="score-input !h-10 !w-14 !text-xl"
+              type="number"
+              min={0}
+              max={99}
+              inputMode="numeric"
+              placeholder="–"
+              aria-label={`Tirs au but ${homeName}`}
+              value={draft.hp}
+              onChange={(e) => setDraft((d) => ({ ...d, hp: e.target.value }))}
+            />
+            <span className="font-bold text-slate-500">:</span>
+            <input
+              className="score-input !h-10 !w-14 !text-xl"
+              type="number"
+              min={0}
+              max={99}
+              inputMode="numeric"
+              placeholder="–"
+              aria-label={`Tirs au but ${awayName}`}
+              value={draft.ap}
+              onChange={(e) => setDraft((d) => ({ ...d, ap: e.target.value }))}
+            />
+          </div>
+        )}
+
+        <button
+          type="button"
+          className="btn-primary w-full py-3 text-base"
+          disabled={!valid || busy}
+          onClick={save}
+        >
+          {busy ? '…' : saved ? '✓ Enregistré' : played ? 'Corriger le score' : '✓ Valider le score'}
+        </button>
+      </div>
+
+      {/* ── Desktop : disposition compacte sur une ligne ── */}
+      <div className="hidden flex-wrap items-center gap-2 sm:flex">
         <span className="min-w-24 flex-1 truncate text-right text-sm font-bold">{homeName}</span>
         <input
           className="score-input"
