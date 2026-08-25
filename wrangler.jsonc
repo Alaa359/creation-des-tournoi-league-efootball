@@ -1,0 +1,22 @@
+// Déploiement Cloudflare — site complet (SPA React + API Worker + stockage KV)
+{
+  "name": "championnat-rafraf",
+  "main": "cloudflare/worker.ts",
+  "compatibility_date": "2026-01-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "kv_namespaces": [
+    {
+      "binding": "STATE",
+      "id": "1f87c67d2e4f4558b889a02d40cb7fd8"
+    }
+  ],
+  "assets": {
+    "directory": "./web/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "vars": {
+    "ADMIN_PASSWORD": "Rafraf-Cup-2026!eFoot",
+    "SESSION_SECRET": "12c284e921ea4b0f9a0da7bc3a016579e55b606aa8724178957080ad053b99bc"
+  }
+}
