@@ -12,10 +12,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    api
-      .me()
-      .then(({ admin }) => setStatus(admin ? 'open' : 'locked'))
-      .catch(() => setStatus('locked'));
+    const check = () =>
+      api
+        .me()
+        .then(({ admin }) => setStatus(admin ? 'open' : 'locked'))
+        .catch(() => setStatus('locked'));
+    check();
+    const interval = setInterval(check, 15_000);
+    return () => clearInterval(interval);
   }, []);
 
   if (status === 'loading') {

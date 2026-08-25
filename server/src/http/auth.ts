@@ -5,7 +5,7 @@ import { logger } from '../core/logger';
 import { clearLoginFailures, recordLoginFailure } from './rateLimit';
 
 const COOKIE = 'efc_admin';
-const TTL_MS = 12 * 60 * 60 * 1000;
+const TTL_MS = 10 * 60 * 1000;
 
 function sign(payload: string): string {
   return crypto.createHmac('sha256', config.sessionSecret).update(payload).digest('base64url');
@@ -36,6 +36,18 @@ function verifyToken(token: string | undefined): boolean {
 
 export function isAdmin(req: Request): boolean {
   return verifyToken(parseCookies(req.headers.cookie)[COOKIE]);
+}
+
+/** Session glissante : chaque requête admin (hors /auth/me) repousse l'expiration. */
+export function touchSession(req: Request, res: Response, next: NextFunction): void {
+  if (!isAdmin(req)) return next();
+  if (req.path === '/auth/me') return next();
+  const exp = Date.now() + TTL_MS;
+  res.setHeader(
+    'Set-Cookie',
+    `${COOKIE}=${exp}.${sign(String(exp))}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(TTL_MS / 1000)}`,
+  );
+  next();
 }
 
 export function requireAdmin(req: Request, res: Response, next: NextFunction): void {

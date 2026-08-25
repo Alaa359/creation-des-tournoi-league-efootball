@@ -53,7 +53,7 @@ const fallbackRateStore = memoryLoginRateStore();
 // ── Auth organisateur : cookie HMAC « expiration.signature » ────────────────
 
 const COOKIE = 'efc_admin';
-const TTL_MS = 12 * 60 * 60 * 1000;
+const TTL_MS = 10 * 60 * 1000;
 
 function sign(secret: string, payload: string): string {
   return crypto.createHmac('sha256', secret).update(payload).digest('base64url');
@@ -83,6 +83,31 @@ function verifyToken(secret: string, token: string | undefined): boolean {
 
 function isAdmin(req: Request, env: CloudEnv): boolean {
   return verifyToken(env.sessionSecret, parseCookies(req.headers.get('cookie'))[COOKIE]);
+}
+
+/** Session glissante : repousse l'expiration sauf sur /auth/me (sonde de l'interface). */
+function refreshedSessionResponse(req: Request, env: CloudEnv, res: Response): Response {
+  if (!isAdmin(req, env) || res.headers.has('Set-Cookie') || routeOf(req) === '/auth/me') {
+    return res;
+  }
+  const exp = Date.now() + TTL_MS;
+  const headers = new Headers(res.headers);
+  headers.set(
+    'Set-Cookie',
+    `${COOKIE}=${exp}.${sign(env.sessionSecret, String(exp))}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(TTL_MS / 1000)}`,
+  );
+  return new Response(res.body, { status: res.status, headers });
+}
+
+function routeOf(req: Request): string {
+  let pathname: string;
+  try {
+    pathname = new URL(req.url).pathname;
+  } catch {
+    pathname = '/';
+  }
+  pathname = pathname.replace(/^\/\.netlify\/functions/, '');
+  return pathname.startsWith('/api') ? pathname.slice(4) : pathname;
 }
 
 function json(body: unknown, init?: ResponseInit): Response {
@@ -334,26 +359,22 @@ export async function handleApi(
   store: CloudStore,
   env: CloudEnv,
 ): Promise<Response> {
-  let pathname: string;
+  const route = routeOf(req);
+  let res: Response;
   try {
-    pathname = new URL(req.url).pathname;
-  } catch {
-    pathname = '/';
-  }
-  pathname = pathname.replace(/^\/\.netlify\/functions/, '');
-  const route = pathname.startsWith('/api') ? pathname.slice(4) : pathname;
-
-  try {
-    return await handleApiRoute(route, req, store, env);
+    res = await handleApiRoute(route, req, store, env);
   } catch (err) {
-    if (err instanceof HttpError) return json({ error: err.message }, { status: err.status });
-    if (err instanceof Error && err.name === 'ZodError') {
+    if (err instanceof HttpError) {
+      res = json({ error: err.message }, { status: err.status });
+    } else if (err instanceof Error && err.name === 'ZodError') {
       const issues = (err as unknown as { issues: { message: string }[] }).issues.map(
         (i) => i.message,
       );
-      return json({ error: 'Données invalides', details: issues }, { status: 400 });
+      res = json({ error: 'Données invalides', details: issues }, { status: 400 });
+    } else {
+      console.error('[api] Erreur interne inattendue', err);
+      res = json({ error: 'Erreur interne' }, { status: 500 });
     }
-    console.error('[api] Erreur interne inattendue', err);
-    return json({ error: 'Erreur interne' }, { status: 500 });
   }
+  return refreshedSessionResponse(req, env, res);
 }
