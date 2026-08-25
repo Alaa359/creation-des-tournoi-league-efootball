@@ -75,7 +75,7 @@ export function AwardsBar({ tournament }: { tournament: Tournament }) {
             key: 'scored' as const,
             icon: '⚽',
             title: 'But marqué',
-            stat: `${topScorer.scored} but${plural(topScorer.scored)} marqué${plural(topScorer.scored)}`,
+            stat: `${topScorer.scored} but${plural(topScorer.scored)}`,
             row: topScorer,
             cls: 'border-amber-300/30 bg-amber-300/5',
             list: scoringList,
@@ -87,11 +87,11 @@ export function AwardsBar({ tournament }: { tournament: Tournament }) {
       key: 'conceded',
       icon: '🧤',
       title: 'But annulé',
-      stat: `${bestDefense.conceded} but${plural(bestDefense.conceded)} encaissé${plural(bestDefense.conceded)}`,
+      stat: `${bestDefense.conceded} but${plural(bestDefense.conceded)}`,
       row: bestDefense,
       cls: 'border-sky-400/30 bg-sky-400/5',
       list: defenseList,
-      value: (s: PlayerStat) => `${s.conceded} but${plural(s.conceded)} encaissé${plural(s.conceded)}`,
+      value: (s: PlayerStat) => `${s.conceded} but${plural(s.conceded)}`,
     },
   ];
 
