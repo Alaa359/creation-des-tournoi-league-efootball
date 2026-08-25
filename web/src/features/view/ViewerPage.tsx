@@ -67,12 +67,7 @@ export function ViewerPage() {
             tournament.standings;
           return (
             <>
-              {showTable && (
-                <>
-                  <StandingsTable rows={tournament.standings!} />
-                  <AwardsBar rows={tournament.standings!} />
-                </>
-              )}
+              {showTable && <StandingsTable rows={tournament.standings!} />}
               {tournament.type === 'groups-knockout' && !!tournament.groupStandings?.length && (
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                   {tournament.groupStandings.map((rows, i) => (
@@ -80,6 +75,7 @@ export function ViewerPage() {
                   ))}
                 </div>
               )}
+              <AwardsBar tournament={tournament} />
               {(ko.length > 0 || tournament.championId) && (
                 <section>
                   {showTable && (

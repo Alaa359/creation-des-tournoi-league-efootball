@@ -10,17 +10,19 @@ export function StandingsTable({ rows, title }: { rows: StandingRow[]; title?: s
           {title}
         </h3>
       )}
-      <table className="w-full text-sm">
+      {/* Sur mobile, le tableau défile horizontalement pour garder TOUTES les colonnes visibles. */}
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[620px] text-sm">
         <thead>
           <tr className="border-b border-white/10 text-left text-xs tracking-wider text-slate-400 uppercase">
             <th className="px-3 py-3">#</th>
             <th className="px-3 py-3">Joueur</th>
             <th className="px-2 py-3 text-center">J</th>
-            <th className="hidden px-2 py-3 text-center sm:table-cell">G</th>
-            <th className="hidden px-2 py-3 text-center sm:table-cell">N</th>
-            <th className="hidden px-2 py-3 text-center sm:table-cell">P</th>
-            <th className="hidden px-2 py-3 text-center md:table-cell">BP</th>
-            <th className="hidden px-2 py-3 text-center md:table-cell">BC</th>
+            <th className="px-2 py-3 text-center">G</th>
+            <th className="px-2 py-3 text-center">N</th>
+            <th className="px-2 py-3 text-center">P</th>
+            <th className="px-2 py-3 text-center">BP</th>
+            <th className="px-2 py-3 text-center">BC</th>
             <th className="px-2 py-3 text-center">Diff</th>
             <th className="px-3 py-3 text-right">Pts</th>
           </tr>
@@ -59,11 +61,11 @@ export function StandingsTable({ rows, title }: { rows: StandingRow[]; title?: s
                 </span>
               </td>
               <td className="px-2 py-2.5 text-center text-slate-300">{row.played}</td>
-              <td className="hidden px-2 py-2.5 text-center sm:table-cell">{row.won}</td>
-              <td className="hidden px-2 py-2.5 text-center sm:table-cell">{row.drawn}</td>
-              <td className="hidden px-2 py-2.5 text-center sm:table-cell">{row.lost}</td>
-              <td className="hidden px-2 py-2.5 text-center md:table-cell">{row.goalsFor}</td>
-              <td className="hidden px-2 py-2.5 text-center md:table-cell">{row.goalsAgainst}</td>
+              <td className="px-2 py-2.5 text-center text-slate-300">{row.won}</td>
+              <td className="px-2 py-2.5 text-center text-slate-300">{row.drawn}</td>
+              <td className="px-2 py-2.5 text-center text-slate-300">{row.lost}</td>
+              <td className="px-2 py-2.5 text-center text-slate-300">{row.goalsFor}</td>
+              <td className="px-2 py-2.5 text-center text-slate-300">{row.goalsAgainst}</td>
               <td
                 className={`px-2 py-2.5 text-center font-semibold ${
                   row.goalDiff > 0 ? 'text-lime-300' : row.goalDiff < 0 ? 'text-red-400' : 'text-slate-400'
@@ -77,7 +79,8 @@ export function StandingsTable({ rows, title }: { rows: StandingRow[]; title?: s
             </motion.tr>
           ))}
         </tbody>
-      </table>
+        </table>
+      </div>
     </Card>
   );
 }
