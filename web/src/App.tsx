@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { api, type TournamentSummary } from './shared/api';
 import { AuthProvider, useAuth } from './shared/AuthContext';
 import { Card, FadeIn, Spinner, TypeBadge } from './ui/primitives';
-import { BallLoader, BackgroundSlideshow } from './ui/fx';
+import { BallLoader } from './ui/fx';
 import { CreatePage } from './features/create/CreatePage';
 import { AdminPage } from './features/admin/AdminPage';
 import { AdminDashboard } from './features/admin/AdminDashboard';
@@ -134,36 +134,19 @@ function HomePage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
-      <FadeIn className="mb-10 text-center">
-        <h1 className="font-display text-3xl tracking-wide sm:text-5xl lg:text-7xl">
-          ORGANISEZ VOS <span className="bg-gradient-to-r from-lime-300 to-emerald-400 bg-clip-text text-transparent">TOURNOIS EFOOTBALL</span>
-        </h1>
-        <p className="mx-auto mt-4 max-w-xl font-display text-lg tracking-wide text-lime-200 sm:text-2xl">
-          Bienvenue sur le site Championnat Rafraf eFootball
-        </p>
-        <div className="mt-6 flex justify-center gap-3">
-          {user ? (
-            <Link to="/create" className="btn-primary text-lg">
-              <img
-                src="/logos/trophy-cup.svg"
-                alt=""
-                aria-hidden
-                className="h-7 w-auto drop-shadow-[0_2px_6px_rgba(6,78,59,0.4)]"
-              />
-              Créer un tournoi
-            </Link>
-          ) : (
-            <Link to="/register" className="btn-primary text-lg">
-              S'inscrire pour créer
-            </Link>
-          )}
-        </div>
-        {user && !user.approved && (
-          <p className="mt-3 text-sm text-amber-300">
-            Votre compte est en attente d'approbation par l'administrateur.
+      {!user && (
+        <FadeIn className="mb-10 text-center">
+          <h1 className="font-display text-3xl tracking-wide sm:text-5xl lg:text-7xl">
+            EFOOTBALL <span className="text-lime-400">CUP</span>
+          </h1>
+          <p className="mx-auto mt-3 max-w-xl font-display text-lg tracking-wide text-slate-400 sm:text-2xl">
+            Tournois entre amis
           </p>
-        )}
-      </FadeIn>
+          <Link to="/login" className="btn-primary mt-6 text-lg">
+            Connexion
+          </Link>
+        </FadeIn>
+      )}
 
       <section>
         <h2 className="font-display mb-4 text-2xl tracking-wide text-slate-300">
@@ -238,7 +221,6 @@ export default function App() {
   return (
     <AuthProvider>
       <div className="flex min-h-screen flex-col overflow-x-hidden">
-        <BackgroundSlideshow />
         <Header />
         <AnimatePresence mode="wait" initial={false}>
           <motion.main
