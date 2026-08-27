@@ -121,11 +121,7 @@ function makeSessionToken(secret: string, userId: string): string {
   return `${payload}.${sign(secret, payload)}`;
 }
 
-let _cachedState: CloudState | null = null;
-
-/** Reset in-memory cache (for tests only). */
 export function _resetState(): void {
-  _cachedState = null;
   _loginFailures.clear();
 }
 
@@ -328,20 +324,20 @@ async function readJsonBody(req: Request): Promise<unknown> {
 }
 
 async function readState(store: CloudStore): Promise<CloudState> {
-  if (!_cachedState) {
-    _cachedState = (await store.read()) ?? { users: [], tournaments: [] };
-    if (!_cachedState.users) _cachedState.users = [];
-    if (!_cachedState.tournaments) _cachedState.tournaments = [];
-    const purged = purgeExpiredTournaments(_cachedState);
-    if (purged > 0) {
-      await store.write(_cachedState);
-    }
+  // Toujours lire depuis le stockage (KV) : le cache en mémoire du module causait
+  // des divergences entre isolates Workers — chaque isolate gardait sa copie et
+  // l'écrasait en écrivant, faisant disparaître des tournois (« introuvable »).
+  const state = (await store.read()) ?? { users: [], tournaments: [] };
+  if (!state.users) state.users = [];
+  if (!state.tournaments) state.tournaments = [];
+  const purged = purgeExpiredTournaments(state);
+  if (purged > 0) {
+    await store.write(state);
   }
-  return _cachedState;
+  return state;
 }
 
 async function writeState(store: CloudStore, state: CloudState): Promise<void> {
-  _cachedState = state;
   await store.write(state);
 }
 
