@@ -211,6 +211,73 @@ describe('cloud api — santé & auth', () => {
     expect(body.id).toBe(created.id);
     expect(body.name).toBe('Privé Cup');
   });
+
+  it('admin peut réinitialiser le mot de passe d\'un utilisateur', async () => {
+    const store = memoryStore();
+    const adminCookie = await setupAdmin(store);
+
+    // Inscription d'un 2e utilisateur (en attente)
+    await handleApi(
+      req('/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Iheb', email: 'iheb@test.com', password: 'ancien123' }),
+      }),
+      store,
+      env,
+    );
+
+    // L'admin le liste puis l'approuve
+    const listRes = await handleApi(req('/admin/users', { headers: { cookie: adminCookie } }), store, env);
+    const users = (await listRes.json()) as { id: string; email: string }[];
+    const iheb = users.find((u) => u.email === 'iheb@test.com');
+    expect(iheb).toBeTruthy();
+
+    await handleApi(
+      req(`/admin/users/${iheb!.id}/approve`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', cookie: adminCookie },
+      }),
+      store,
+      env,
+    );
+
+    // L'admin réinitialise le mot de passe
+    const resetRes = await handleApi(
+      req(`/admin/users/${iheb!.id}/password`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', cookie: adminCookie },
+        body: JSON.stringify({ password: 'nouveau123' }),
+      }),
+      store,
+      env,
+    );
+    expect(resetRes.status).toBe(200);
+
+    // L'utilisateur se connecte avec le nouveau mot de passe
+    const loginRes = await handleApi(
+      req('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'iheb@test.com', password: 'nouveau123' }),
+      }),
+      store,
+      env,
+    );
+    expect(loginRes.status).toBe(200);
+
+    // L'ancien mot de passe ne fonctionne plus
+    const oldLogin = await handleApi(
+      req('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'iheb@test.com', password: 'ancien123' }),
+      }),
+      store,
+      env,
+    );
+    expect(oldLogin.status).toBe(401);
+  });
 });
 
 describe('cloud api — cycle de vie league complet', () => {

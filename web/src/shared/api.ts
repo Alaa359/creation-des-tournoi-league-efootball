@@ -172,6 +172,9 @@ export const api = {
   adminRejectUser: (userId: string): Promise<{ ok: true; user: UserPublic }> =>
     fetch(`/api/admin/users/${userId}/reject`, json('PATCH', {})).then((r) => handle(r)),
 
+  adminResetPassword: (userId: string, password: string): Promise<{ ok: true }> =>
+    fetch(`/api/admin/users/${userId}/password`, json('PATCH', { password })).then((r) => handle(r)),
+
   adminDeleteUser: (userId: string): Promise<{ ok: true }> =>
     fetch(`/api/admin/users/${userId}`, { method: 'DELETE', credentials: 'same-origin' }).then((r) => handle(r)),
 

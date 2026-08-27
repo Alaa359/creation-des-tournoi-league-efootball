@@ -10,6 +10,7 @@ export function AdminDashboard() {
   const [tournaments, setTournaments] = useState<TourneySummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [openUser, setOpenUser] = useState<string | null>(null);
 
   const refresh = async () => {
     try {
@@ -28,6 +29,32 @@ export function AdminDashboard() {
   const pendingUsers = users.filter((u) => !u.approved && u.role !== 'admin');
   const activeUsers = users.filter((u) => u.approved && u.role !== 'admin');
   const pendingTournaments = tournaments.filter((t) => t.status === 'pending');
+
+  const resetPassword = async (user: UserPublic) => {
+    const password = window.prompt(`Nouveau mot de passe pour ${user.name} (6 caractères min) :`);
+    if (!password) return;
+    try {
+      await api.adminResetPassword(user.id, password);
+      alert(`Mot de passe de ${user.name} mis à jour.`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Erreur');
+    }
+  };
+
+  const deleteTournament = async (t: TourneySummary) => {
+    if (!window.confirm(`Supprimer le tournoi « ${t.name} » ?`)) return;
+    try {
+      await api.deleteTournament(t.id);
+      // retirer les infos locale sans recharger tout l'écran
+      setTournaments((prev) => prev.filter((x) => x.id !== t.id));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Erreur');
+    }
+  };
+
+  const userTournaments = (userId: string) =>
+    tournaments.filter((t) => t.createdBy?.id === userId);
+
 
   if (loading) return <div className="py-24 text-center"><Spinner /></div>;
   if (error) return <div className="py-24 text-center text-red-400">{error}</div>;
@@ -135,34 +162,90 @@ export function AdminDashboard() {
             Utilisateurs actifs ({activeUsers.length})
           </h2>
           <div className="mt-3 space-y-2">
-            {activeUsers.map((u) => (
-              <Card key={u.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
-                <div>
-                  <p className="font-bold text-white">{u.name}</p>
-                  <p className="text-xs text-slate-400">{u.email}</p>
+            {activeUsers.map((u) => {
+              const isOpen = openUser === u.id;
+              const uTournaments = userTournaments(u.id);
+              return (
+                <div key={u.id}>
+                  <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+                    <div>
+                      <p className="font-bold text-white">{u.name}</p>
+                      <p className="text-xs text-slate-400">{u.email}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="btn-ghost px-3 py-1.5 text-xs"
+                        onClick={() => setOpenUser(isOpen ? null : u.id)}
+                      >
+                        {isOpen ? 'Masquer les tournois' : `Voir les tournois de ${u.name}`}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost px-3 py-1.5 text-xs"
+                        onClick={() => resetPassword(u)}
+                      >
+                        Réinitialiser mot de passe
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-danger px-3 py-1.5 text-xs"
+                        onClick={() => api.adminRejectUser(u.id).then(refresh)}
+                      >
+                        Désactiver
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-danger px-3 py-1.5 text-xs"
+                        onClick={() => {
+                          if (window.confirm(`Supprimer le compte de ${u.name} ?`)) {
+                            api.adminDeleteUser(u.id).then(refresh);
+                          }
+                        }}
+                      >
+                        Supprimer
+                      </button>
+                    </div>
+                  </Card>
+
+                  {isOpen && (
+                    <div className="mt-2 space-y-2 pl-2">
+                      {uTournaments.length === 0 ? (
+                        <Card className="p-4 text-sm text-slate-400 italic">
+                          {u.name} n'a créé aucun tournoi.
+                        </Card>
+                      ) : (
+                        uTournaments.map((t) => (
+                          <Card key={t.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
+                            <div className="min-w-0">
+                              <p className="font-bold text-white">{t.name}</p>
+                              <p className="text-xs text-slate-400">
+                                {t.type} · {t.playerCount} joueurs · {new Date(t.createdAt).toLocaleDateString('fr-FR')}
+                              </p>
+                              {(t.status === 'active' || t.status === 'pending') && (
+                                <p className="text-xs text-slate-500">Statut : {t.status}</p>
+                              )}
+                            </div>
+                            <div className="flex gap-2">
+                              <Link to={`/t/${t.id}`} className="btn-ghost px-3 py-1.5 text-xs">
+                                Voir
+                              </Link>
+                              <button
+                                type="button"
+                                className="btn-danger px-3 py-1.5 text-xs"
+                                onClick={() => deleteTournament(t)}
+                              >
+                                Supprimer
+                              </button>
+                            </div>
+                          </Card>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    className="btn-danger px-3 py-1.5 text-xs"
-                    onClick={() => api.adminRejectUser(u.id).then(refresh)}
-                  >
-                    Désactiver
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-danger px-3 py-1.5 text-xs"
-                    onClick={() => {
-                      if (window.confirm(`Supprimer le compte de ${u.name} ?`)) {
-                        api.adminDeleteUser(u.id).then(refresh);
-                      }
-                    }}
-                  >
-                    Supprimer
-                  </button>
-                </div>
-              </Card>
-            ))}
+              );
+            })}
           </div>
         </section>
       </FadeIn>

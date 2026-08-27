@@ -477,6 +477,22 @@ export async function handleApiRoute(
     return json({ ok: true, user: userPublic(user) });
   }
 
+  // PATCH /admin/users/:userId/password
+  if (seg[0] === 'admin' && seg[1] === 'users' && seg[3] === 'password' && method === 'PATCH') {
+    if (!(await isAdmin(req, env, store))) throw new HttpError(403, 'Accès administrateur requis');
+    const body = (await readJsonBody(req)) as { password?: string };
+    const password = body.password ?? '';
+    if (typeof password !== 'string' || password.length < 6 || password.length > 100) {
+      throw new HttpError(400, 'Le mot de passe doit contenir entre 6 et 100 caractères');
+    }
+    const state = await readState(store);
+    const user = state.users.find((u) => u.id === seg[2]);
+    if (!user) throw new HttpError(404, 'Utilisateur introuvable');
+    user.passwordHash = hashPassword(password);
+    await writeState(store, state);
+    return json({ ok: true });
+  }
+
   // DELETE /admin/users/:userId
   if (seg[0] === 'admin' && seg[1] === 'users' && seg.length === 3 && method === 'DELETE') {
     if (!(await isAdmin(req, env, store))) throw new HttpError(403, 'Accès administrateur requis');
