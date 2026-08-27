@@ -7,6 +7,7 @@ import { Card } from '../../ui/primitives';
 import { StandingsTable } from './StandingsTable';
 import { BracketTree } from './BracketTree';
 import { AwardsBar } from './AwardsBar';
+import { MatchList } from './MatchList';
 
 export function ViewerPage() {
   const { id } = useParams<{ id: string }>();
@@ -76,6 +77,7 @@ export function ViewerPage() {
                 </div>
               )}
               <AwardsBar tournament={tournament} />
+              <MatchList tournament={tournament} />
               {(ko.length > 0 || tournament.championId) && (
                 <section>
                   {showTable && (
