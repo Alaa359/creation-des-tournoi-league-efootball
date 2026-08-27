@@ -342,6 +342,10 @@ export function AdminPage() {
           >
             {copied ? '✓ Copié !' : '📋 Copier'}
           </button>
+          <p className="w-full text-xs text-slate-400">
+            Copiez ce lien pour l'envoyer à vos amis : ils verront les matchs et classements sans
+            avoir de compte. (Ne partagez pas l'adresse de la page administrateur.)
+          </p>
         </Card>
       </FadeIn>
 

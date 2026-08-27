@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router';
+import { Link, NavLink, Route, Routes, useLocation, useNavigate, useParams } from 'react-router';
 import { AnimatePresence, motion } from 'motion/react';
 import { api, type TournamentSummary } from './shared/api';
 import { AuthProvider, useAuth } from './shared/AuthContext';
@@ -225,6 +225,20 @@ function RequireAuth({ children, adminOnly = false }: { children: React.ReactNod
   return <>{children}</>;
 }
 
+// Garde l'espace organisateur : un visiteur non connecté (ex. ami via un lien
+// administrateur partagé par erreur) est redirigé vers la page spectateur.
+function GuardOrganizer() {
+  const { id } = useParams<{ id: string }>();
+  const { user, loading } = useAuth();
+  const navigate = useNavigate();
+  if (loading) return <div className="py-24 text-center"><Spinner /></div>;
+  if (!user) {
+    navigate(`/t/${id}`, { replace: true });
+    return null;
+  }
+  return <AdminPage />;
+}
+
 export default function App() {
   const location = useLocation();
   return (
@@ -255,7 +269,7 @@ export default function App() {
               <Route path="/t/:id" element={<ViewerPage />} />
               <Route
                 path="/t/:id/admin"
-                element={<RequireAuth><AdminPage /></RequireAuth>}
+                element={<GuardOrganizer />}
               />
               <Route path="*" element={<NotFound />} />
             </Routes>
