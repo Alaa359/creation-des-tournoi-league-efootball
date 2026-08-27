@@ -21,12 +21,16 @@ function MatchRow({ t, m, ko }: MatchRowProps) {
 
   if (!homeName || !awayName) {
     return (
-      <div className="flex items-center justify-between rounded-xl border border-white/5 bg-black/20 px-3 py-2 text-sm">
-        <span className="flex items-center gap-2 font-semibold">{homeName ?? '—'}</span>
-        <span className="text-xs text-slate-500 italic">
+      <div className="flex items-center justify-between gap-2 rounded-xl border border-white/5 bg-black/20 px-3 py-2 text-sm">
+        <span className="flex min-w-0 items-center gap-2 font-semibold">
+          <span className="min-w-0 break-words">{homeName ?? '—'}</span>
+        </span>
+        <span className="shrink-0 text-xs text-slate-500 italic">
           {m.autoAdvance ? "qualifié d'office" : 'en attente…'}
         </span>
-        <span className="flex items-center gap-2 font-semibold">{awayName ?? '—'}</span>
+        <span className="flex min-w-0 items-center gap-2 font-semibold">
+          <span className="min-w-0 break-words">{awayName ?? '—'}</span>
+        </span>
       </div>
     );
   }
@@ -36,15 +40,17 @@ function MatchRow({ t, m, ko }: MatchRowProps) {
 
   return (
     <div
-      className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm transition ${
+      className={`grid grid-cols-[1fr_auto_1fr] items-center gap-x-2 gap-y-1 rounded-xl border px-3 py-2.5 text-sm transition ${
         played
           ? 'border-white/10 bg-white/[0.04]'
           : 'border-white/5 bg-black/20'
       }`}
     >
       {/* Home */}
-      <span className="flex min-w-0 flex-1 items-center justify-end gap-2">
-        <span className={`truncate font-bold ${homeWins ? 'text-lime-300' : awayWins ? 'text-slate-400' : 'text-slate-200'}`}>
+      <span className="flex min-w-0 items-center justify-end gap-2 text-right">
+        <span
+          className={`min-w-0 break-words font-bold ${homeWins ? 'text-lime-300' : awayWins ? 'text-slate-400' : 'text-slate-200'}`}
+        >
           {homeName}
         </span>
         <PlayerAvatar name={homeName} />
@@ -64,9 +70,11 @@ function MatchRow({ t, m, ko }: MatchRowProps) {
       )}
 
       {/* Away */}
-      <span className="flex min-w-0 flex-1 items-center gap-2">
+      <span className="flex min-w-0 items-center gap-2">
         <PlayerAvatar name={awayName} />
-        <span className={`truncate font-bold ${awayWins ? 'text-lime-300' : homeWins ? 'text-slate-400' : 'text-slate-200'}`}>
+        <span
+          className={`min-w-0 break-words font-bold ${awayWins ? 'text-lime-300' : homeWins ? 'text-slate-400' : 'text-slate-200'}`}
+        >
           {awayName}
         </span>
       </span>
