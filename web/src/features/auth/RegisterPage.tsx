@@ -1,16 +1,15 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { api } from '../../shared/api';
-import { useAuth } from '../../shared/AuthContext';
 import { Card, FadeIn, Spinner } from '../../ui/primitives';
 
 export function RegisterPage() {
   const navigate = useNavigate();
-  const { refresh } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
@@ -20,8 +19,7 @@ export function RegisterPage() {
     setError(null);
     try {
       await api.register({ name: name.trim(), email, password });
-      await refresh();
-      navigate('/');
+      setSuccess("Compte créé ! En attente d'approbation par l'administrateur.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur d'inscription");
     } finally {
@@ -38,46 +36,59 @@ export function RegisterPage() {
 
       <FadeIn delay={0.08}>
         <Card className="mt-6 p-6">
-          <form onSubmit={submit} className="space-y-4">
-            <div>
-              <label className="mb-1.5 block text-sm font-bold text-slate-300">Nom</label>
-              <input
-                className="input"
-                placeholder="Votre nom"
-                value={name}
-                maxLength={30}
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
+          {success ? (
+            <div className="space-y-4 text-center">
+              <p className="text-lime-300 font-semibold">{success}</p>
+              <button
+                type="button"
+                onClick={() => navigate('/login')}
+                className="btn-primary w-full text-lg"
+              >
+                Se connecter
+              </button>
             </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-bold text-slate-300">Email</label>
-              <input
-                className="input"
-                type="email"
-                placeholder="votre@email.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-bold text-slate-300">Mot de passe</label>
-              <input
-                className="input"
-                type="password"
-                placeholder="Minimum 6 caractères"
-                value={password}
-                minLength={6}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </div>
-            {error && <p className="text-sm font-semibold text-red-400">{error}</p>}
-            <button type="submit" className="btn-primary w-full text-lg" disabled={busy}>
-              {busy ? <Spinner className="h-5 w-5" /> : "🚀 S'inscrire"}
-            </button>
-          </form>
+          ) : (
+            <form onSubmit={submit} className="space-y-4">
+              <div>
+                <label className="mb-1.5 block text-sm font-bold text-slate-300">Nom</label>
+                <input
+                  className="input"
+                  placeholder="Votre nom"
+                  value={name}
+                  maxLength={30}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-bold text-slate-300">Email</label>
+                <input
+                  className="input"
+                  type="email"
+                  placeholder="votre@email.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-bold text-slate-300">Mot de passe</label>
+                <input
+                  className="input"
+                  type="password"
+                  placeholder="Minimum 6 caractères"
+                  value={password}
+                  minLength={6}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              </div>
+              {error && <p className="text-sm font-semibold text-red-400">{error}</p>}
+              <button type="submit" className="btn-primary w-full text-lg" disabled={busy}>
+                {busy ? <Spinner className="h-5 w-5" /> : "🚀 S'inscrire"}
+              </button>
+            </form>
+          )}
           <p className="mt-4 text-center text-sm text-slate-400">
             Déjà un compte ?{' '}
             <Link to="/login" className="font-semibold text-lime-300 hover:underline">

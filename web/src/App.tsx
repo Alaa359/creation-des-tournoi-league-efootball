@@ -53,23 +53,23 @@ function Header() {
           </span>
         </Link>
         <nav className="flex items-center gap-1 text-sm font-semibold">
-          <NavLink
-            to="/"
-            end
-            className={({ isActive }) =>
-              `flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition ${isActive ? 'bg-lime-400/15 text-lime-300' : 'text-slate-300 hover:bg-white/5'}`
-            }
-          >
-            <img
-              src="/logos/home-icon.svg"
-              alt=""
-              aria-hidden
-              className="h-4 w-4 drop-shadow-[0_1px_4px_rgba(163,230,53,0.4)]"
-            />
-            Accueil
-          </NavLink>
           {user ? (
             <>
+              <NavLink
+                to="/"
+                end
+                className={({ isActive }) =>
+                  `flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition ${isActive ? 'bg-lime-400/15 text-lime-300' : 'text-slate-300 hover:bg-white/5'}`
+                }
+              >
+                <img
+                  src="/logos/home-icon.svg"
+                  alt=""
+                  aria-hidden
+                  className="h-4 w-4 drop-shadow-[0_1px_4px_rgba(163,230,53,0.4)]"
+                />
+                Accueil
+              </NavLink>
               <NavLink
                 to="/create"
                 className={({ isActive }) =>
@@ -197,6 +197,11 @@ function HomePage() {
                   <p className="mt-1 text-sm text-slate-400">
                     👥 {t.playerCount} joueur{t.playerCount > 1 ? 's' : ''}
                   </p>
+                  {t.creatorName && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Par {t.creatorName}
+                    </p>
+                  )}
                   <ExpiryBadge expiresAt={t.expiresAt} />
                 </Card>
               </Link>

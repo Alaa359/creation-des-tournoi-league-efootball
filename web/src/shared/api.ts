@@ -52,6 +52,7 @@ export interface TournamentSummary {
   playerCount: number;
   status?: 'pending' | 'active';
   expiresAt?: string;
+  creatorName?: string;
 }
 
 export interface Tournament {
@@ -106,7 +107,7 @@ export const api = {
   me: (): Promise<{ user: UserPublic | null }> =>
     fetch('/api/auth/me', { credentials: 'same-origin' }).then((r) => r.json()),
 
-  register: (data: { name: string; email: string; password: string }): Promise<{ ok: true; user: UserPublic }> =>
+  register: (data: { name: string; email: string; password: string }): Promise<{ ok: true; user?: UserPublic; pending?: boolean }> =>
     fetch('/api/auth/register', json('POST', data)).then((r) => handle(r)),
 
   login: (data: { email: string; password: string }): Promise<{ ok: true; user: UserPublic }> =>

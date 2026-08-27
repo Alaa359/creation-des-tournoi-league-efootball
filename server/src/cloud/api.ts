@@ -261,7 +261,8 @@ function publicView(t: Tournament) {
   return { ...t, standings: computeStandings(t.players, scope), championId: championOf(t) };
 }
 
-function tournamentSummary(t: Tournament) {
+function tournamentSummary(t: Tournament, users?: Map<string, User>) {
+  const creator = users?.get(t.createdBy ?? '');
   return {
     id: t.id,
     name: t.name,
@@ -270,6 +271,7 @@ function tournamentSummary(t: Tournament) {
     playerCount: t.players.length,
     status: t.status ?? 'active',
     expiresAt: new Date(new Date(t.createdAt).getTime() + TOURNAMENT_TTL_MS).toISOString(),
+    creatorName: creator?.name,
   };
 }
 
@@ -382,14 +384,17 @@ export async function handleApiRoute(
     };
     state.users.push(user);
     await writeState(store, state);
-    const res = json({ ok: true, user: userPublic(user) }, { status: 201 });
-    return new Response(res.body, {
-      status: res.status,
-      headers: {
-        'Content-Type': 'application/json; charset=utf-8',
-        'Set-Cookie': `${COOKIE}=${makeSessionToken(env.sessionSecret, user.id)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(TTL_MS / 1000)}`,
-      },
-    });
+    if (isFirst) {
+      const res = json({ ok: true, user: userPublic(user) }, { status: 201 });
+      return new Response(res.body, {
+        status: res.status,
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Set-Cookie': `${COOKIE}=${makeSessionToken(env.sessionSecret, user.id)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(TTL_MS / 1000)}`,
+        },
+      });
+    }
+    return json({ ok: true, pending: true, message: "Compte en attente d'approbation par l'administrateur" }, { status: 202 });
   }
 
   // POST /auth/login
@@ -491,7 +496,7 @@ export async function handleApiRoute(
     const list = [...state.tournaments].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     const users = new Map(state.users.map((u) => [u.id, u]));
     return json(list.map((t) => ({
-      ...tournamentSummary(t),
+      ...tournamentSummary(t, users),
       status: t.status ?? 'active',
       createdBy: t.createdBy ? userPublic(users.get(t.createdBy)!) : undefined,
       rejectReason: t.rejectReason,
@@ -530,20 +535,22 @@ export async function handleApiRoute(
   // GET /tournaments — liste publique (uniquement les tournois actifs)
   if (route === '/tournaments' && method === 'GET') {
     const state = await readState(store);
+    const users = new Map(state.users.map((u) => [u.id, u]));
     const list = [...state.tournaments]
       .filter((t) => t.status !== 'pending')
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    return json(list.map(tournamentSummary));
+    return json(list.map((t) => tournamentSummary(t, users)));
   }
 
   // GET /my/tournaments — tournois de l'utilisateur connecté (y compris pending)
   if (route === '/my/tournaments' && method === 'GET') {
     const user = requireUser(req, env);
     const state = await readState(store);
+    const users = new Map(state.users.map((u) => [u.id, u]));
     const list = [...state.tournaments]
       .filter((t) => t.createdBy === user.id)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    return json(list.map((t) => ({ ...tournamentSummary(t), status: t.status ?? 'active' })));
+    return json(list.map((t) => ({ ...tournamentSummary(t, users), status: t.status ?? 'active' })));
   }
 
   // POST /tournaments — création (nécessite compte approuvé)
