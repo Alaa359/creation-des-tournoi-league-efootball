@@ -147,6 +147,33 @@ describe('cloud api — santé & auth', () => {
     }
     expect((await attempt()).status).toBe(429);
   });
+
+  it('régression : session valide acceptée après reset du cache (isolate froid)', async () => {
+    const store = memoryStore();
+    const cookie = await setupAdmin(store);
+
+    // Simule un isolate Worker "froid" : le cache mémoire est vide, mais la
+    // session (cookie) reste valide et l'utilisateur existe toujours dans KV.
+    _resetState();
+
+    const res = await handleApi(
+      req('/tournaments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', cookie },
+        body: JSON.stringify({
+          name: 'Playoff froid',
+          type: 'playoff',
+          doubleRound: false,
+          groupsCount: 2,
+          qualifiedPerGroup: 2,
+          players: ['Alice', 'Bob', 'Carla', 'David', 'Eva', 'Farid', 'Gina', 'Hugo'],
+        }),
+      }),
+      store,
+      env,
+    );
+    expect(res.status).toBe(201);
+  });
 });
 
 describe('cloud api — cycle de vie league complet', () => {

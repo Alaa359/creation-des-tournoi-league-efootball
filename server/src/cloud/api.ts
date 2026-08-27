@@ -171,26 +171,26 @@ function randomBase64Url(bytes: number): string {
   return randomBytes(bytes).toString('base64url');
 }
 
-function currentUser(req: Request, env: CloudEnv): User | null {
+async function currentUser(req: Request, env: CloudEnv, store: CloudStore): Promise<User | null> {
   const token = verifyToken(env.sessionSecret, parseCookies(req.headers.get('cookie'))[COOKIE]);
   if (!token) return null;
-  const state = _cachedState ?? { users: [], tournaments: [] };
+  const state = await readState(store);
   return state.users.find((u) => u.id === token) ?? null;
 }
 
-function isAdmin(req: Request, env: CloudEnv): boolean {
-  const user = currentUser(req, env);
+async function isAdmin(req: Request, env: CloudEnv, store: CloudStore): Promise<boolean> {
+  const user = await currentUser(req, env, store);
   return user?.role === 'admin';
 }
 
-function requireUser(req: Request, env: CloudEnv): User {
-  const user = currentUser(req, env);
+async function requireUser(req: Request, env: CloudEnv, store: CloudStore): Promise<User> {
+  const user = await currentUser(req, env, store);
   if (!user) throw new HttpError(401, 'Connexion requise');
   return user;
 }
 
-function requireApprovedUser(req: Request, env: CloudEnv): User {
-  const user = requireUser(req, env);
+async function requireApprovedUser(req: Request, env: CloudEnv, store: CloudStore): Promise<User> {
+  const user = await requireUser(req, env, store);
   if (!user.approved) throw new HttpError(403, "Compte en attente d'approbation par l'administrateur");
   return user;
 }
@@ -438,7 +438,7 @@ export async function handleApiRoute(
 
   // GET /auth/me
   if (route === '/auth/me') {
-    const user = currentUser(req, env);
+    const user = await currentUser(req, env, store);
     if (!user) return json({ user: null });
     return json({ user: userPublic(user) });
   }
@@ -449,14 +449,14 @@ export async function handleApiRoute(
 
   // GET /admin/users
   if (route === '/admin/users' && method === 'GET') {
-    if (!isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
+    if (!(await isAdmin(req, env, store))) throw new HttpError(403, 'Accès administrateur requis');
     const state = await readState(store);
     return json(state.users.map(userPublic));
   }
 
   // PATCH /admin/users/:userId/approve
   if (seg[0] === 'admin' && seg[1] === 'users' && seg[3] === 'approve' && method === 'PATCH') {
-    if (!isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
+    if (!(await isAdmin(req, env, store))) throw new HttpError(403, 'Accès administrateur requis');
     const state = await readState(store);
     const user = state.users.find((u) => u.id === seg[2]);
     if (!user) throw new HttpError(404, 'Utilisateur introuvable');
@@ -467,7 +467,7 @@ export async function handleApiRoute(
 
   // PATCH /admin/users/:userId/reject
   if (seg[0] === 'admin' && seg[1] === 'users' && seg[3] === 'reject' && method === 'PATCH') {
-    if (!isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
+    if (!(await isAdmin(req, env, store))) throw new HttpError(403, 'Accès administrateur requis');
     const state = await readState(store);
     const user = state.users.find((u) => u.id === seg[2]);
     if (!user) throw new HttpError(404, 'Utilisateur introuvable');
@@ -479,7 +479,7 @@ export async function handleApiRoute(
 
   // DELETE /admin/users/:userId
   if (seg[0] === 'admin' && seg[1] === 'users' && seg.length === 3 && method === 'DELETE') {
-    if (!isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
+    if (!(await isAdmin(req, env, store))) throw new HttpError(403, 'Accès administrateur requis');
     const state = await readState(store);
     const user = state.users.find((u) => u.id === seg[2]);
     if (!user) throw new HttpError(404, 'Utilisateur introuvable');
@@ -491,7 +491,7 @@ export async function handleApiRoute(
 
   // GET /admin/tournaments (tous, y compris pending)
   if (route === '/admin/tournaments' && method === 'GET') {
-    if (!isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
+    if (!(await isAdmin(req, env, store))) throw new HttpError(403, 'Accès administrateur requis');
     const state = await readState(store);
     const list = [...state.tournaments].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     const users = new Map(state.users.map((u) => [u.id, u]));
@@ -505,7 +505,7 @@ export async function handleApiRoute(
 
   // PATCH /admin/tournaments/:id/approve
   if (seg[0] === 'admin' && seg[1] === 'tournaments' && seg[3] === 'approve' && method === 'PATCH') {
-    if (!isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
+    if (!(await isAdmin(req, env, store))) throw new HttpError(403, 'Accès administrateur requis');
     const state = await readState(store);
     const t = state.tournaments.find((x) => x.id === seg[2]);
     if (!t) throw new HttpError(404, 'Tournoi introuvable');
@@ -517,7 +517,7 @@ export async function handleApiRoute(
 
   // PATCH /admin/tournaments/:id/reject
   if (seg[0] === 'admin' && seg[1] === 'tournaments' && seg[3] === 'reject' && method === 'PATCH') {
-    if (!isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
+    if (!(await isAdmin(req, env, store))) throw new HttpError(403, 'Accès administrateur requis');
     const state = await readState(store);
     const t = state.tournaments.find((x) => x.id === seg[2]);
     if (!t) throw new HttpError(404, 'Tournoi introuvable');
@@ -544,7 +544,7 @@ export async function handleApiRoute(
 
   // GET /my/tournaments — tournois de l'utilisateur connecté (y compris pending)
   if (route === '/my/tournaments' && method === 'GET') {
-    const user = requireUser(req, env);
+    const user = await requireUser(req, env, store);
     const state = await readState(store);
     const users = new Map(state.users.map((u) => [u.id, u]));
     const list = [...state.tournaments]
@@ -555,7 +555,7 @@ export async function handleApiRoute(
 
   // POST /tournaments — création (nécessite compte approuvé)
   if (route === '/tournaments' && method === 'POST') {
-    const user = requireApprovedUser(req, env);
+    const user = await requireApprovedUser(req, env, store);
     const input = createTournamentSchema.parse(await readJsonBody(req));
     const t: Tournament = {
       id: randomBase64Url(5),
@@ -593,7 +593,7 @@ export async function handleApiRoute(
       if (idx < 0) throw new HttpError(404, 'Tournoi introuvable');
       const t = state.tournaments[idx];
       if (t.status === 'pending') {
-        const user = currentUser(req, env);
+        const user = await currentUser(req, env, store);
         if (!user || (t.createdBy !== user.id && user.role !== 'admin')) {
           throw new HttpError(404, 'Tournoi introuvable');
         }
@@ -603,7 +603,7 @@ export async function handleApiRoute(
 
     // DELETE /tournaments/:id
     if (seg.length === 2 && method === 'DELETE') {
-      const user = requireUser(req, env);
+      const user = await requireUser(req, env, store);
       if (idx < 0) throw new HttpError(404, 'Tournoi introuvable');
       const t = state.tournaments[idx];
       if (t.createdBy !== user.id && user.role !== 'admin') {
@@ -616,7 +616,7 @@ export async function handleApiRoute(
 
     // PATCH /tournaments/:id/matches/:matchId/result
     if (seg[2] === 'matches' && seg[4] === 'result' && method === 'PATCH') {
-      const user = requireUser(req, env);
+      const user = await requireUser(req, env, store);
       if (idx < 0) throw new HttpError(404, 'Tournoi introuvable');
       const t = state.tournaments[idx];
       if (t.createdBy !== user.id && user.role !== 'admin') {
@@ -642,7 +642,7 @@ export async function handleApiRoute(
 
     // /tournaments/:id/players[/:playerId]
     if (seg[2] === 'players') {
-      const user = requireUser(req, env);
+      const user = await requireUser(req, env, store);
       if (idx < 0) throw new HttpError(404, 'Tournoi introuvable');
       const t = state.tournaments[idx];
       if (t.createdBy !== user.id && user.role !== 'admin') {
