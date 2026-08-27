@@ -1,4 +1,4 @@
-export type TournamentType = 'league' | 'knockout' | 'league-knockout' | 'groups-knockout';
+export type TournamentType = 'league' | 'knockout' | 'league-knockout' | 'groups-knockout' | 'playoff';
 
 export interface Player {
   id: string;
@@ -23,7 +23,7 @@ export interface Match {
   /** knockout aller-retour : 1 = aller, 2 = retour */
   leg?: 1 | 2;
   /** phase du match (formats hybrides ; absent = déduit du type du tournoi) */
-  phase?: 'league' | 'group' | 'knockout';
+  phase?: 'league' | 'group' | 'knockout' | 'playoff';
 }
 
 export interface StandingRow {
@@ -65,7 +65,10 @@ export interface Tournament {
   groups?: string[][];
   standings?: StandingRow[];
   groupStandings?: StandingRow[][];
+  playoffStandings?: (StandingRow & { bonus?: number; bonusLabel?: string })[];
   championId?: string | null;
+  playoffBonusPoints?: Record<string, number>;
+  playoffBonusRank?: Record<string, number>;
 }
 
 async function handle<T>(res: Response): Promise<T> {

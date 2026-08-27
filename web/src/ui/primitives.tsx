@@ -28,6 +28,11 @@ const TYPE_STYLES: Record<string, { label: string; cls: string; logos: string[] 
     cls: 'bg-amber-400/15 text-amber-300',
     logos: ['/logos/group.png', '/logos/knockout.svg'],
   },
+  playoff: {
+    label: 'Playoff',
+    cls: 'bg-emerald-400/15 text-emerald-300',
+    logos: ['/logos/group.png', '/logos/league.svg'],
+  },
 };
 
 export function TypeBadge({ type }: { type: string }) {

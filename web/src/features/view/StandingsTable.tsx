@@ -2,7 +2,15 @@ import { motion } from 'motion/react';
 import type { StandingRow } from '../../shared/api';
 import { Card, PlayerAvatar } from '../../ui/primitives';
 
-export function StandingsTable({ rows, title }: { rows: StandingRow[]; title?: string }) {
+export function StandingsTable({
+  rows,
+  title,
+  showBonus = false,
+}: {
+  rows: (StandingRow & { bonus?: number; bonusLabel?: string })[];
+  title?: string;
+  showBonus?: boolean;
+}) {
   return (
     <Card className="overflow-hidden">
       {title && (
@@ -24,6 +32,7 @@ export function StandingsTable({ rows, title }: { rows: StandingRow[]; title?: s
             <th className="px-2 py-3 text-center">BP</th>
             <th className="px-2 py-3 text-center">BC</th>
             <th className="px-2 py-3 text-center">Diff</th>
+            {showBonus && <th className="px-2 py-3 text-center">Bonus</th>}
             <th className="px-3 py-3 text-right">Pts</th>
           </tr>
         </thead>
@@ -73,6 +82,17 @@ export function StandingsTable({ rows, title }: { rows: StandingRow[]; title?: s
               >
                 {row.goalDiff > 0 ? `+${row.goalDiff}` : row.goalDiff}
               </td>
+              {showBonus && (
+                <td className="px-2 py-2.5 text-center">
+                  {row.bonus != null && row.bonus > 0 ? (
+                    <span className="text-xs font-semibold text-emerald-300" title={row.bonusLabel}>
+                      +{row.bonus}
+                    </span>
+                  ) : (
+                    <span className="text-slate-600">—</span>
+                  )}
+                </td>
+              )}
               <td className="px-3 py-2.5 text-right font-display text-xl text-white">
                 {row.points}
               </td>

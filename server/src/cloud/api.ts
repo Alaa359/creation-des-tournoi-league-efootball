@@ -16,6 +16,12 @@ import {
   roundRobinMatches,
 } from '../domain/hybrid';
 import {
+  computePlayoffStandings,
+  isPlayoffMatch,
+  maybeGeneratePlayoffPhase,
+  playoffChampion,
+} from '../domain/playoff';
+import {
   addPlayerSchema,
   createTournamentSchema,
   resultSchema,
@@ -128,6 +134,24 @@ function championOf(t: Tournament): string | null {
 }
 
 function publicView(t: Tournament) {
+  if (t.type === 'playoff') {
+    const rr = roundRobinMatches(t);
+    const groupStandings = (t.groups ?? []).map((ids) =>
+      computeStandings(
+        t.players.filter((p) => ids.includes(p.id)),
+        rr,
+      ),
+    );
+    const playoffStandings = t.matches.some((m) => isPlayoffMatch(m))
+      ? computePlayoffStandings(t)
+      : undefined;
+    return {
+      ...t,
+      groupStandings,
+      playoffStandings,
+      championId: playoffChampion(t),
+    };
+  }
   if (t.type === 'groups-knockout') {
     const rr = roundRobinMatches(t);
     const groupStandings = (t.groups ?? []).map((ids) =>
@@ -168,6 +192,16 @@ function rebuildSchedule(t: Tournament): void {
       }));
       break;
     case 'groups-knockout': {
+      t.groups = generateGroups(ids, t.groupsCount ?? 2, Math.random);
+      t.matches = t.groups.flatMap((groupIds) =>
+        generateLeagueSchedule(groupIds, t.doubleRound).map((m) => ({
+          ...m,
+          phase: 'group' as const,
+        })),
+      );
+      break;
+    }
+    case 'playoff': {
       t.groups = generateGroups(ids, t.groupsCount ?? 2, Math.random);
       t.matches = t.groups.flatMap((groupIds) =>
         generateLeagueSchedule(groupIds, t.doubleRound).map((m) => ({
@@ -266,6 +300,9 @@ export async function handleApiRoute(
       ...(input.type === 'groups-knockout'
         ? { groupsCount: input.groupsCount, qualifiedPerGroup: input.qualifiedPerGroup ?? 1 }
         : {}),
+      ...(input.type === 'playoff'
+        ? { groupsCount: input.groupsCount, qualifiedPerGroup: input.qualifiedPerGroup ?? 1 }
+        : {}),
     };
     rebuildSchedule(t);
     const state = (await store.read()) ?? { tournaments: [] };
@@ -310,6 +347,7 @@ export async function handleApiRoute(
         delete m.awayPens;
       }
       maybeGenerateKnockoutPhase(t);
+      maybeGeneratePlayoffPhase(t);
       await store.write(state);
       return json(publicView(t));
     }

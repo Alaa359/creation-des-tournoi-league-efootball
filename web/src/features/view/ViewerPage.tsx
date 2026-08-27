@@ -66,15 +66,31 @@ export function ViewerPage() {
           const showTable =
             (tournament.type === 'league' || tournament.type === 'league-knockout') &&
             tournament.standings;
+          const isPlayoff = tournament.type === 'playoff';
           return (
             <>
               {showTable && <StandingsTable rows={tournament.standings!} />}
-              {tournament.type === 'groups-knockout' && !!tournament.groupStandings?.length && (
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                  {tournament.groupStandings.map((rows, i) => (
-                    <StandingsTable key={i} rows={rows} title={`Groupe ${String.fromCharCode(65 + i)}`} />
-                  ))}
-                </div>
+              {(tournament.type === 'groups-knockout' || isPlayoff) && !!tournament.groupStandings?.length && (
+                <section>
+                  {isPlayoff && (
+                    <h2 className="font-display mb-3 text-2xl tracking-wide text-slate-200">
+                      Phase de groupes
+                    </h2>
+                  )}
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                    {tournament.groupStandings.map((rows, i) => (
+                      <StandingsTable key={i} rows={rows} title={`Groupe ${String.fromCharCode(65 + i)}`} />
+                    ))}
+                  </div>
+                </section>
+              )}
+              {isPlayoff && tournament.playoffStandings && tournament.playoffStandings.length > 0 && (
+                <section>
+                  <h2 className="font-display mb-3 text-2xl tracking-wide text-emerald-300">
+                    Playoff
+                  </h2>
+                  <StandingsTable rows={tournament.playoffStandings} showBonus />
+                </section>
               )}
               <AwardsBar tournament={tournament} />
               <MatchList tournament={tournament} />

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const tournamentTypes = ['league', 'knockout', 'league-knockout', 'groups-knockout'] as const;
+export const tournamentTypes = ['league', 'knockout', 'league-knockout', 'groups-knockout', 'playoff'] as const;
 export type TournamentType = (typeof tournamentTypes)[number];
 
 export interface Player {
@@ -9,7 +9,7 @@ export interface Player {
 }
 
 /** Phase d'un match : round-robin (championnat ou groupes) ou éliminations. */
-export type MatchPhase = 'league' | 'group' | 'knockout';
+export type MatchPhase = 'league' | 'group' | 'knockout' | 'playoff';
 
 export interface Match {
   id: string;
@@ -50,6 +50,10 @@ export interface Tournament {
   qualifiedPerGroup?: number;
   /** groups-knockout : répartition des ids de joueurs par groupe */
   groups?: string[][];
+  /** playoff : points de bonus par joueur (clé = playerId) */
+  playoffBonusPoints?: Record<string, number>;
+  /** playoff : rang en phase de groupes par joueur (clé = playerId) */
+  playoffBonusRank?: Record<string, number>;
 }
 
 export interface StandingRow {
@@ -106,6 +110,30 @@ export const createTournamentSchema = z
         d.groupsCount * d.qualifiedPerGroup < d.players.length),
     {
       message: 'Tous les joueurs seraient qualifiés pour les éliminations',
+      path: ['qualifiedPerGroup'],
+    },
+  )
+  .refine((d) => d.type !== 'playoff' || d.groupsCount != null, {
+    message: 'Nombre de groupes requis',
+    path: ['groupsCount'],
+  })
+  .refine(
+    (d) =>
+      d.type !== 'playoff' ||
+      (d.groupsCount != null && d.groupsCount * 2 <= d.players.length && d.qualifiedPerGroup != null),
+    {
+      message: 'Chaque groupe doit compter au moins 2 joueurs',
+      path: ['groupsCount'],
+    },
+  )
+  .refine(
+    (d) =>
+      d.type !== 'playoff' ||
+      (d.groupsCount != null &&
+        d.qualifiedPerGroup != null &&
+        d.groupsCount * d.qualifiedPerGroup < d.players.length),
+    {
+      message: 'Tous les joueurs seraient qualifiés pour le playoff',
       path: ['qualifiedPerGroup'],
     },
   )

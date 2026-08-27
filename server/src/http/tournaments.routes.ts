@@ -19,6 +19,12 @@ import {
 } from '../domain/knockout';
 import { generateGroups, isKnockoutMatch, maybeGenerateKnockoutPhase, roundRobinMatches } from '../domain/hybrid';
 import {
+  computePlayoffStandings,
+  isPlayoffMatch,
+  maybeGeneratePlayoffPhase,
+  playoffChampion,
+} from '../domain/playoff';
+import {
   addPlayerSchema,
   createTournamentSchema,
   resultSchema,
@@ -51,6 +57,24 @@ function championOf(t: Tournament): string | null {
 
 /** Snapshot public : tournoi + classements calculés + champion (formats avec éliminations). */
 function publicView(t: Tournament) {
+  if (t.type === 'playoff') {
+    const rr = roundRobinMatches(t);
+    const groupStandings = (t.groups ?? []).map((ids) =>
+      computeStandings(
+        t.players.filter((p) => ids.includes(p.id)),
+        rr,
+      ),
+    );
+    const playoffStandings = t.matches.some((m) => isPlayoffMatch(m))
+      ? computePlayoffStandings(t)
+      : undefined;
+    return {
+      ...t,
+      groupStandings,
+      playoffStandings,
+      championId: playoffChampion(t),
+    };
+  }
   if (t.type === 'groups-knockout') {
     const rr = roundRobinMatches(t);
     const groupStandings = (t.groups ?? []).map((ids) =>
@@ -91,6 +115,16 @@ function rebuildSchedule(t: Tournament): void {
       );
       break;
     }
+    case 'playoff': {
+      t.groups = generateGroups(ids, t.groupsCount ?? 2, Math.random);
+      t.matches = t.groups.flatMap((groupIds) =>
+        generateLeagueSchedule(groupIds, t.doubleRound).map((m) => ({
+          ...m,
+          phase: 'group' as const,
+        })),
+      );
+      break;
+    }
   }
 }
 
@@ -110,6 +144,9 @@ apiRouter.post('/tournaments', requireAdmin, async (req, res) => {
     matches: [],
     ...(input.type === 'league-knockout' ? { qualifiers: input.qualifiers } : {}),
     ...(input.type === 'groups-knockout'
+      ? { groupsCount: input.groupsCount, qualifiedPerGroup: input.qualifiedPerGroup ?? 1 }
+      : {}),
+    ...(input.type === 'playoff'
       ? { groupsCount: input.groupsCount, qualifiedPerGroup: input.qualifiedPerGroup ?? 1 }
       : {}),
   };
@@ -154,11 +191,15 @@ apiRouter.patch('/tournaments/:id/matches/:matchId/result', requireAdmin, async 
     delete m.homePens;
     delete m.awayPens;
   }
-  const generated = maybeGenerateKnockoutPhase(t);
+  const generatedKO = maybeGenerateKnockoutPhase(t);
+  const generatedPlayoff = maybeGeneratePlayoffPhase(t);
   await upsertTournament(t);
   broadcastUpdate(t.id);
-  if (generated) {
+  if (generatedKO) {
     logger.info({ tournamentId: t.id }, 'Phase à élimination directe générée');
+  }
+  if (generatedPlayoff) {
+    logger.info({ tournamentId: t.id }, 'Phase playoff générée');
   }
   res.json(publicView(t));
 });

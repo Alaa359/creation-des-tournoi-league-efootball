@@ -34,6 +34,12 @@ const FORMATS: { value: TournamentType; logos: string[]; label: string; desc: st
     label: 'Groupes + Knockout',
     desc: 'Phase de groupes, puis éliminations entre les qualifiés.',
   },
+  {
+    value: 'playoff',
+    logos: ['/logos/group.png', '/logos/league.svg'],
+    label: 'Playoff',
+    desc: 'Phase de groupes, puis tournoi entre les meilleurs (Ligue 1 Tunisie).',
+  },
 ];
 
 export function CreatePage() {
@@ -53,6 +59,8 @@ export function CreatePage() {
     (n, i) => filled.findIndex((x) => x.toLowerCase() === n.toLowerCase()) !== i,
   );
   const isHybrid = type === 'league-knockout' || type === 'groups-knockout';
+  const isPlayoff = type === 'playoff';
+  const hasGroups = type === 'groups-knockout' || isPlayoff;
 
   // Options valides selon le nombre de joueurs, avec repli automatique.
   const qualifierOptions = useMemo(
@@ -69,11 +77,11 @@ export function CreatePage() {
       ? qualifiers
       : (qualifierOptions[qualifierOptions.length - 1] ?? 0);
   const effGroups =
-    type === 'groups-knockout' && groupOptions.includes(groupsCount)
+    hasGroups && groupOptions.includes(groupsCount)
       ? groupsCount
       : (groupOptions[groupOptions.length - 1] ?? 0);
   const effPerGroup =
-    type === 'groups-knockout' && effGroups * qualifiedPerGroup >= filled.length
+    hasGroups && effGroups * qualifiedPerGroup >= filled.length
       ? 1
       : qualifiedPerGroup;
 
@@ -101,6 +109,14 @@ export function CreatePage() {
         const byes = size - qualifies;
         return `${effGroups} groupes · ${mParGroupe * effGroups} matchs → éliminations des ${qualifies} qualifiés${byes > 0 ? ` · ${byes} exempt(s)` : ''}`;
       }
+      case 'playoff': {
+        if (!effGroups) return null;
+        const parGroupe = Math.floor(filled.length / effGroups);
+        const mParGroupe = (parGroupe * (parGroupe - 1) * (doubleRound ? 2 : 1)) / 2;
+        const qualifies = effGroups * effPerGroup;
+        const mPlayoff = qualifies * (qualifies - 1) / 2;
+        return `${effGroups} groupes · ${mParGroupe * effGroups} matchs → playoff des ${qualifies} meilleurs (${mPlayoff} matchs)`;
+      }
       default: {
         const size = bracketSize(n);
         const byes = size - n;
@@ -114,7 +130,7 @@ export function CreatePage() {
   }, [filled, type, doubleRound, effQualifiers, effGroups, effPerGroup]);
 
   const configOk =
-    type === 'league-knockout' ? effQualifiers > 0 : type === 'groups-knockout' ? effGroups > 0 : true;
+    type === 'league-knockout' ? effQualifiers > 0 : type === 'groups-knockout' || isPlayoff ? effGroups > 0 : true;
   const canSubmit = name.trim().length > 0 && !duplicates && preview !== null && configOk && !busy;
 
   const submit = (): void => {
@@ -129,6 +145,9 @@ export function CreatePage() {
         players: filled,
         ...(type === 'league-knockout' ? { qualifiers: effQualifiers } : {}),
         ...(type === 'groups-knockout'
+          ? { groupsCount: effGroups, qualifiedPerGroup: effPerGroup }
+          : {}),
+        ...(isPlayoff
           ? { groupsCount: effGroups, qualifiedPerGroup: effPerGroup }
           : {}),
       })
@@ -220,7 +239,7 @@ export function CreatePage() {
             </div>
           )}
 
-          {type === 'groups-knockout' && (
+          {hasGroups && (
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="mb-1.5 block text-sm font-bold text-slate-300">
@@ -282,6 +301,11 @@ export function CreatePage() {
                 <span className="ml-2 text-xs font-normal text-slate-500">
                   phase de {type === 'groups-knockout' ? 'groupes' : 'championnat'} — les
                   éliminations se jouent en aller simple (tab si égalité)
+                </span>
+              )}
+              {isPlayoff && (
+                <span className="ml-2 text-xs font-normal text-slate-500">
+                  phase de groupes + playoff entre les meilleurs (points de bonus)
                 </span>
               )}
             </span>
