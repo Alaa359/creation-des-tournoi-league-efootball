@@ -62,10 +62,10 @@ function Header() {
           </span>
         </Link>
 
-        {/* Desktop nav */}
-        <nav className="hidden items-center gap-1 text-sm font-semibold sm:flex">
-          {user ? (
-            <>
+        {user ? (
+          <>
+            {/* Desktop nav */}
+            <nav className="hidden items-center gap-1 text-sm font-semibold sm:flex">
               <NavLink to="/create" className={navLinkClass}>Créer</NavLink>
               {user.role === 'admin' && (
                 <NavLink to="/admin" className={navLinkClass}>Admin</NavLink>
@@ -73,27 +73,21 @@ function Header() {
               <button type="button" onClick={logout} className="rounded-lg px-3 py-1.5 text-slate-400 transition hover:bg-white/5 hover:text-slate-200 sm:text-sm">
                 Déconnexion
               </button>
-            </>
-          ) : (
-            <NavLink to="/login" className="btn-primary !px-3 !py-1.5 !text-sm">Connexion</NavLink>
-          )}
-        </nav>
-
-        {/* Mobile hamburger */}
-        {user && (
-          <button
-            type="button"
-            onClick={() => setMenuOpen(!menuOpen)}
-            className="flex flex-col items-center justify-center gap-1 sm:hidden"
-            aria-label="Menu"
-          >
-            <span className={`block h-0.5 w-6 bg-slate-300 transition-transform ${menuOpen ? 'translate-y-1.5 rotate-45' : ''}`} />
-            <span className={`block h-0.5 w-6 bg-slate-300 transition-opacity ${menuOpen ? 'opacity-0' : ''}`} />
-            <span className={`block h-0.5 w-6 bg-slate-300 transition-transform ${menuOpen ? '-translate-y-1.5 -rotate-45' : ''}`} />
-          </button>
-        )}
-        {!user && (
-          <NavLink to="/login" className="btn-primary !px-3 !py-1.5 !text-sm sm:hidden">Connexion</NavLink>
+            </nav>
+            {/* Mobile hamburger */}
+            <button
+              type="button"
+              onClick={() => setMenuOpen(!menuOpen)}
+              className="flex flex-col items-center justify-center gap-1 sm:hidden"
+              aria-label="Menu"
+            >
+              <span className={`block h-0.5 w-6 bg-slate-300 transition-transform ${menuOpen ? 'translate-y-1.5 rotate-45' : ''}`} />
+              <span className={`block h-0.5 w-6 bg-slate-300 transition-opacity ${menuOpen ? 'opacity-0' : ''}`} />
+              <span className={`block h-0.5 w-6 bg-slate-300 transition-transform ${menuOpen ? '-translate-y-1.5 -rotate-45' : ''}`} />
+            </button>
+          </>
+        ) : (
+          <NavLink to="/login" className="btn-primary !px-3 !py-1.5 !text-sm">Connexion</NavLink>
         )}
       </div>
 
