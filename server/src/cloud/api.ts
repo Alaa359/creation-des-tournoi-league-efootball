@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import {
   computeStandings,
   generateLeagueSchedule,
@@ -68,30 +67,51 @@ function purgeExpiredTournaments(state: CloudState): number {
 const COOKIE = 'efc_session';
 const TTL_MS = 24 * 60 * 60 * 1000; // 24 heures
 
-// ── Hachage de mot de passe (PBKDF2) ──────────────────────────────────────
+// ── Hachage de mot de passe (SHA-256 + salt, Web Crypto) ────────────────────
+
+function randomHex(bytes: number): string {
+  const arr = new Uint8Array(bytes);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function sha256hex(input: string): Promise<string> {
+  const data = new TextEncoder().encode(input);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, '0')).join('');
+}
 
 async function hashPassword(password: string): Promise<string> {
-  const { randomBytes, createHash } = await import('node:crypto');
-  const salt = randomBytes(16).toString('hex');
-  const hash = createHash('sha256')
-    .update(salt + password)
-    .digest('hex');
+  const salt = randomHex(16);
+  const hash = await sha256hex(salt + password);
   return `${salt}:${hash}`;
 }
 
 async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const [salt, expectedHash] = stored.split(':');
   if (!salt || !expectedHash) return false;
-  const { createHash } = await import('node:crypto');
-  const hash = createHash('sha256')
-    .update(salt + password)
-    .digest('hex');
+  const hash = await sha256hex(salt + password);
   return hash === expectedHash;
 }
 
-function sign(secret: string, payload: string): string {
-  const { createHmac } = require('node:crypto');
-  return createHmac('sha256', secret).update(payload).digest('base64url');
+async function hmacSha256(secret: string, payload: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
+  return btoa(String.fromCharCode(...new Uint8Array(sig)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
 }
 
 function parseCookies(header: string | null): Record<string, string> {
@@ -105,7 +125,7 @@ function parseCookies(header: string | null): Record<string, string> {
 }
 
 /** Vérifie le token et retourne l'userId ou null. */
-function verifyToken(secret: string, token: string | undefined): string | null {
+async function verifyToken(secret: string, token: string | undefined): Promise<string | null> {
   if (!token || !secret) return null;
   const dot = token.lastIndexOf('.');
   if (dot <= 0) return null;
@@ -115,17 +135,18 @@ function verifyToken(secret: string, token: string | undefined): string | null {
   const exp = Number(parts[0]);
   const userId = parts[1];
   if (!Number.isFinite(exp) || exp < Date.now()) return null;
-  const given = Buffer.from(token.slice(dot + 1));
-  const expected = Buffer.from(sign(secret, expRaw));
-  if (expected.length !== given.length) return null;
-  if (!crypto.timingSafeEqual(expected, given)) return null;
+  const given = new Uint8Array(atob(token.slice(dot + 1).replace(/-/g, '+').replace(/_/g, '/')).split('').map(c => c.charCodeAt(0)));
+  const expectedSig = await hmacSha256(secret, expRaw);
+  const expected = new Uint8Array(atob(expectedSig.replace(/-/g, '+').replace(/_/g, '/')).split('').map(c => c.charCodeAt(0)));
+  if (!timingSafeEqual(expected, given)) return null;
   return userId;
 }
 
-function makeSessionToken(secret: string, userId: string): string {
+async function makeSessionToken(secret: string, userId: string): Promise<string> {
   const exp = Date.now() + TTL_MS;
   const payload = `${exp}:${userId}`;
-  return `${payload}.${sign(secret, payload)}`;
+  const sig = await hmacSha256(secret, payload);
+  return `${payload}.${sig}`;
 }
 
 let _cachedState: CloudState | null = null;
@@ -170,26 +191,39 @@ function clientIp(req: Request): string {
   return '127.0.0.1';
 }
 
-function currentUser(req: Request, env: CloudEnv): User | null {
-  const token = verifyToken(env.sessionSecret, parseCookies(req.headers.get('cookie'))[COOKIE]);
+function randomId(): string {
+  const arr = new Uint8Array(16);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function randomBase64Url(bytes: number): string {
+  const arr = new Uint8Array(bytes);
+  crypto.getRandomValues(arr);
+  return btoa(String.fromCharCode(...arr))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function currentUser(req: Request, env: CloudEnv): Promise<User | null> {
+  const token = await verifyToken(env.sessionSecret, parseCookies(req.headers.get('cookie'))[COOKIE]);
   if (!token) return null;
   const state = _cachedState ?? { users: [], tournaments: [] };
   return state.users.find((u) => u.id === token) ?? null;
 }
 
-function isAdmin(req: Request, env: CloudEnv): boolean {
-  const user = currentUser(req, env);
+async function isAdmin(req: Request, env: CloudEnv): Promise<boolean> {
+  const user = await currentUser(req, env);
   return user?.role === 'admin';
 }
 
-function requireUser(req: Request, env: CloudEnv): User {
-  const user = currentUser(req, env);
+async function requireUser(req: Request, env: CloudEnv): Promise<User> {
+  const user = await currentUser(req, env);
   if (!user) throw new HttpError(401, 'Connexion requise');
   return user;
 }
 
-function requireApprovedUser(req: Request, env: CloudEnv): User {
-  const user = requireUser(req, env);
+async function requireApprovedUser(req: Request, env: CloudEnv): Promise<User> {
+  const user = await requireUser(req, env);
   if (!user.approved) throw new HttpError(403, "Compte en attente d'approbation par l'administrateur");
   return user;
 }
@@ -369,7 +403,7 @@ export async function handleApiRoute(
     }
     const isFirst = state.users.length === 0;
     const user: User = {
-      id: crypto.randomUUID(),
+      id: randomId(),
       name: body.name,
       email: body.email.toLowerCase(),
       passwordHash: await hashPassword(body.password),
@@ -384,7 +418,7 @@ export async function handleApiRoute(
       status: res.status,
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
-        'Set-Cookie': `${COOKIE}=${makeSessionToken(env.sessionSecret, user.id)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(TTL_MS / 1000)}`,
+        'Set-Cookie': `${COOKIE}=${await makeSessionToken(env.sessionSecret, user.id)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(TTL_MS / 1000)}`,
       },
     });
   }
@@ -415,7 +449,7 @@ export async function handleApiRoute(
       status: res.status,
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
-        'Set-Cookie': `${COOKIE}=${makeSessionToken(env.sessionSecret, user.id)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(TTL_MS / 1000)}`,
+        'Set-Cookie': `${COOKIE}=${await makeSessionToken(env.sessionSecret, user.id)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(TTL_MS / 1000)}`,
       },
     });
   }
@@ -430,7 +464,7 @@ export async function handleApiRoute(
 
   // GET /auth/me
   if (route === '/auth/me') {
-    const user = currentUser(req, env);
+    const user = await currentUser(req, env);
     if (!user) return json({ user: null });
     return json({ user: userPublic(user) });
   }
@@ -441,14 +475,14 @@ export async function handleApiRoute(
 
   // GET /admin/users
   if (route === '/admin/users' && method === 'GET') {
-    if (!isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
+    if (!await isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
     const state = await readState(store);
     return json(state.users.map(userPublic));
   }
 
   // PATCH /admin/users/:userId/approve
   if (seg[0] === 'admin' && seg[1] === 'users' && seg[3] === 'approve' && method === 'PATCH') {
-    if (!isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
+    if (!await isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
     const state = await readState(store);
     const user = state.users.find((u) => u.id === seg[2]);
     if (!user) throw new HttpError(404, 'Utilisateur introuvable');
@@ -459,7 +493,7 @@ export async function handleApiRoute(
 
   // PATCH /admin/users/:userId/reject
   if (seg[0] === 'admin' && seg[1] === 'users' && seg[3] === 'reject' && method === 'PATCH') {
-    if (!isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
+    if (!await isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
     const state = await readState(store);
     const user = state.users.find((u) => u.id === seg[2]);
     if (!user) throw new HttpError(404, 'Utilisateur introuvable');
@@ -471,7 +505,7 @@ export async function handleApiRoute(
 
   // DELETE /admin/users/:userId
   if (seg[0] === 'admin' && seg[1] === 'users' && seg.length === 3 && method === 'DELETE') {
-    if (!isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
+    if (!await isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
     const state = await readState(store);
     const user = state.users.find((u) => u.id === seg[2]);
     if (!user) throw new HttpError(404, 'Utilisateur introuvable');
@@ -483,7 +517,7 @@ export async function handleApiRoute(
 
   // GET /admin/tournaments (tous, y compris pending)
   if (route === '/admin/tournaments' && method === 'GET') {
-    if (!isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
+    if (!await isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
     const state = await readState(store);
     const list = [...state.tournaments].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     const users = new Map(state.users.map((u) => [u.id, u]));
@@ -497,7 +531,7 @@ export async function handleApiRoute(
 
   // PATCH /admin/tournaments/:id/approve
   if (seg[0] === 'admin' && seg[1] === 'tournaments' && seg[3] === 'approve' && method === 'PATCH') {
-    if (!isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
+    if (!await isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
     const state = await readState(store);
     const t = state.tournaments.find((x) => x.id === seg[2]);
     if (!t) throw new HttpError(404, 'Tournoi introuvable');
@@ -509,7 +543,7 @@ export async function handleApiRoute(
 
   // PATCH /admin/tournaments/:id/reject
   if (seg[0] === 'admin' && seg[1] === 'tournaments' && seg[3] === 'reject' && method === 'PATCH') {
-    if (!isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
+    if (!await isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
     const state = await readState(store);
     const t = state.tournaments.find((x) => x.id === seg[2]);
     if (!t) throw new HttpError(404, 'Tournoi introuvable');
@@ -535,7 +569,7 @@ export async function handleApiRoute(
 
   // GET /my/tournaments — tournois de l'utilisateur connecté (y compris pending)
   if (route === '/my/tournaments' && method === 'GET') {
-    const user = requireUser(req, env);
+    const user = await requireUser(req, env);
     const state = await readState(store);
     const list = [...state.tournaments]
       .filter((t) => t.createdBy === user.id)
@@ -545,15 +579,15 @@ export async function handleApiRoute(
 
   // POST /tournaments — création (nécessite compte approuvé)
   if (route === '/tournaments' && method === 'POST') {
-    const user = requireApprovedUser(req, env);
+    const user = await requireApprovedUser(req, env);
     const input = createTournamentSchema.parse(await readJsonBody(req));
     const t: Tournament = {
-      id: crypto.randomBytes(5).toString('base64url'),
+      id: randomBase64Url(5),
       name: input.name,
       type: input.type,
       doubleRound: input.doubleRound,
       createdAt: new Date().toISOString(),
-      players: input.players.map((name) => ({ id: crypto.randomUUID(), name })),
+      players: input.players.map((name) => ({ id: randomId(), name })),
       matches: [],
       createdBy: user.id,
       status: 'active',
@@ -583,7 +617,7 @@ export async function handleApiRoute(
       if (idx < 0) throw new HttpError(404, 'Tournoi introuvable');
       const t = state.tournaments[idx];
       if (t.status === 'pending') {
-        const user = currentUser(req, env);
+        const user = await currentUser(req, env);
         if (!user || (t.createdBy !== user.id && user.role !== 'admin')) {
           throw new HttpError(404, 'Tournoi introuvable');
         }
@@ -593,7 +627,7 @@ export async function handleApiRoute(
 
     // DELETE /tournaments/:id
     if (seg.length === 2 && method === 'DELETE') {
-      const user = requireUser(req, env);
+      const user = await requireUser(req, env);
       if (idx < 0) throw new HttpError(404, 'Tournoi introuvable');
       const t = state.tournaments[idx];
       if (t.createdBy !== user.id && user.role !== 'admin') {
@@ -606,7 +640,7 @@ export async function handleApiRoute(
 
     // PATCH /tournaments/:id/matches/:matchId/result
     if (seg[2] === 'matches' && seg[4] === 'result' && method === 'PATCH') {
-      const user = requireUser(req, env);
+      const user = await requireUser(req, env);
       if (idx < 0) throw new HttpError(404, 'Tournoi introuvable');
       const t = state.tournaments[idx];
       if (t.createdBy !== user.id && user.role !== 'admin') {
@@ -632,7 +666,7 @@ export async function handleApiRoute(
 
     // /tournaments/:id/players[/:playerId]
     if (seg[2] === 'players') {
-      const user = requireUser(req, env);
+      const user = await requireUser(req, env);
       if (idx < 0) throw new HttpError(404, 'Tournoi introuvable');
       const t = state.tournaments[idx];
       if (t.createdBy !== user.id && user.role !== 'admin') {
@@ -646,7 +680,7 @@ export async function handleApiRoute(
         if (t.players.some((p) => p.name.toLowerCase() === name.toLowerCase())) {
           throw new HttpError(409, 'Ce nom existe déjà dans le roster');
         }
-        t.players.push({ id: crypto.randomUUID(), name });
+        t.players.push({ id: randomId(), name });
         rebuildSchedule(t);
         await writeState(store, state);
         return json(publicView(t), { status: 201 });
