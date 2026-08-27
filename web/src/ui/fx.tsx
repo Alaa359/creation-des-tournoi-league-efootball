@@ -146,7 +146,7 @@ export function BackgroundSlideshow() {
           {/* Légende façon broadcast. */}
           <div className="absolute inset-x-0 bottom-[15vh] flex flex-col items-center gap-1 px-4 text-center">
             <motion.h2
-              className="font-display text-5xl tracking-widest text-white drop-shadow-[0_4px_24px_rgba(0,0,0,0.9)] sm:text-6xl"
+              className="font-display text-3xl tracking-widest text-white drop-shadow-[0_4px_24px_rgba(0,0,0,0.9)] sm:text-5xl"
               initial={{ opacity: 0, y: 26 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.35, duration: 0.7, ease: 'easeOut' }}

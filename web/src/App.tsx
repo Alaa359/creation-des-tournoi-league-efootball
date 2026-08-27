@@ -30,17 +30,26 @@ function ExpiryBadge({ expiresAt }: { expiresAt?: string }) {
 function Header() {
   const { user, refresh } = useAuth();
   const navigate = useNavigate();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const logout = async () => {
     await api.logout();
     await refresh();
     navigate('/');
+    setMenuOpen(false);
   };
+
+  const closeMenu = () => setMenuOpen(false);
+
+  const navLinkClass = ({ isActive }: { isActive: boolean }) =>
+    `block rounded-lg px-3 py-2 transition sm:inline-flex sm:items-center sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-sm ${
+      isActive ? 'bg-lime-400/15 text-lime-300' : 'text-slate-300 hover:bg-white/5'
+    }`;
 
   return (
     <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0b0f19]/80 backdrop-blur-md">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-        <Link to="/" className="flex items-center gap-2">
+        <Link to="/" onClick={closeMenu} className="flex items-center gap-2">
           <motion.span
             className="text-2xl"
             animate={{ rotate: 360 }}
@@ -52,70 +61,61 @@ function Header() {
             EFOOTBALL <span className="text-lime-400">CUP</span>
           </span>
         </Link>
-        <nav className="flex items-center gap-1 text-sm font-semibold">
+
+        {/* Desktop nav */}
+        <nav className="hidden items-center gap-1 text-sm font-semibold sm:flex">
           {user ? (
             <>
-              <NavLink
-                to="/"
-                end
-                className={({ isActive }) =>
-                  `flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition ${isActive ? 'bg-lime-400/15 text-lime-300' : 'text-slate-300 hover:bg-white/5'}`
-                }
-              >
-                <img
-                  src="/logos/home-icon.svg"
-                  alt=""
-                  aria-hidden
-                  className="h-4 w-4 drop-shadow-[0_1px_4px_rgba(163,230,53,0.4)]"
-                />
-                Accueil
-              </NavLink>
-              <NavLink
-                to="/create"
-                className={({ isActive }) =>
-                  `rounded-lg px-3 py-1.5 transition ${isActive ? 'bg-lime-400/15 text-lime-300' : 'text-slate-300 hover:bg-white/5'}`
-                }
-              >
-                Créer
-              </NavLink>
+              <NavLink to="/create" className={navLinkClass}>Créer</NavLink>
               {user.role === 'admin' && (
-                <NavLink
-                  to="/admin"
-                  className={({ isActive }) =>
-                    `rounded-lg px-3 py-1.5 transition ${isActive ? 'bg-amber-400/15 text-amber-300' : 'text-slate-300 hover:bg-white/5'}`
-                  }
-                >
-                  Admin
-                </NavLink>
+                <NavLink to="/admin" className={navLinkClass}>Admin</NavLink>
               )}
-              <button
-                type="button"
-                onClick={logout}
-                className="rounded-lg px-3 py-1.5 text-slate-400 transition hover:bg-white/5 hover:text-slate-200"
-              >
+              <button type="button" onClick={logout} className="rounded-lg px-3 py-1.5 text-slate-400 transition hover:bg-white/5 hover:text-slate-200 sm:text-sm">
                 Déconnexion
               </button>
             </>
           ) : (
             <>
-              <NavLink
-                to="/login"
-                className={({ isActive }) =>
-                  `rounded-lg px-3 py-1.5 transition ${isActive ? 'bg-lime-400/15 text-lime-300' : 'text-slate-300 hover:bg-white/5'}`
-                }
-              >
-                Connexion
-              </NavLink>
-              <NavLink
-                to="/register"
-                className="btn-primary !px-3 !py-1.5 !text-sm"
-              >
-                Inscription
-              </NavLink>
+              <NavLink to="/login" className={navLinkClass}>Connexion</NavLink>
+              <NavLink to="/register" className="btn-primary !px-3 !py-1.5 !text-sm">Inscription</NavLink>
             </>
           )}
         </nav>
+
+        {/* Mobile hamburger */}
+        <button
+          type="button"
+          onClick={() => setMenuOpen(!menuOpen)}
+          className="flex flex-col items-center justify-center gap-1 sm:hidden"
+          aria-label="Menu"
+        >
+          <span className={`block h-0.5 w-6 bg-slate-300 transition-transform ${menuOpen ? 'translate-y-1.5 rotate-45' : ''}`} />
+          <span className={`block h-0.5 w-6 bg-slate-300 transition-opacity ${menuOpen ? 'opacity-0' : ''}`} />
+          <span className={`block h-0.5 w-6 bg-slate-300 transition-transform ${menuOpen ? '-translate-y-1.5 -rotate-45' : ''}`} />
+        </button>
       </div>
+
+      {/* Mobile menu dropdown */}
+      {menuOpen && (
+        <nav className="border-t border-white/10 bg-[#0b0f19]/95 px-4 py-3 sm:hidden">
+          {user ? (
+            <div className="flex flex-col gap-1">
+              <NavLink to="/create" className={navLinkClass} onClick={closeMenu}>Créer un tournoi</NavLink>
+              {user.role === 'admin' && (
+                <NavLink to="/admin" className={navLinkClass} onClick={closeMenu}>Admin</NavLink>
+              )}
+              <button type="button" onClick={logout} className="rounded-lg px-3 py-2 text-left text-slate-400 transition hover:bg-white/5 hover:text-slate-200">
+                Déconnexion
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1">
+              <NavLink to="/login" className={navLinkClass} onClick={closeMenu}>Connexion</NavLink>
+              <NavLink to="/register" className="btn-primary !text-sm" onClick={closeMenu}>Inscription</NavLink>
+            </div>
+          )}
+        </nav>
+      )}
     </header>
   );
 }
@@ -135,10 +135,10 @@ function HomePage() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
       <FadeIn className="mb-10 text-center">
-        <h1 className="font-display text-5xl tracking-wide sm:text-7xl">
+        <h1 className="font-display text-3xl tracking-wide sm:text-5xl lg:text-7xl">
           ORGANISEZ VOS <span className="bg-gradient-to-r from-lime-300 to-emerald-400 bg-clip-text text-transparent">TOURNOIS EFOOTBALL</span>
         </h1>
-        <p className="mx-auto mt-4 max-w-xl font-display text-2xl tracking-wide text-lime-200">
+        <p className="mx-auto mt-4 max-w-xl font-display text-lg tracking-wide text-lime-200 sm:text-2xl">
           Bienvenue sur le site Championnat Rafraf eFootball
         </p>
         <div className="mt-6 flex justify-center gap-3">
@@ -191,7 +191,7 @@ function HomePage() {
                       {new Date(t.createdAt).toLocaleDateString('fr-FR')}
                     </span>
                   </div>
-                  <h3 className="font-display mt-3 truncate text-2xl tracking-wide group-hover:text-lime-300">
+                  <h3 className="font-display mt-3 truncate text-xl tracking-wide group-hover:text-lime-300 sm:text-2xl">
                     {t.name}
                   </h3>
                   <p className="mt-1 text-sm text-slate-400">
@@ -216,7 +216,7 @@ function HomePage() {
 function NotFound() {
   return (
     <div className="mx-auto max-w-md px-4 py-24 text-center">
-      <p className="font-display text-6xl text-lime-300">404</p>
+      <p className="font-display text-5xl text-lime-300 sm:text-6xl">404</p>
       <p className="mt-3 text-slate-400">Ce terrain n'existe pas.</p>
       <Link to="/" className="btn-primary mt-6">
         Retour au stade
@@ -237,7 +237,7 @@ export default function App() {
   const location = useLocation();
   return (
     <AuthProvider>
-      <div className="flex min-h-screen flex-col">
+      <div className="flex min-h-screen flex-col overflow-x-hidden">
         <BackgroundSlideshow />
         <Header />
         <AnimatePresence mode="wait" initial={false}>

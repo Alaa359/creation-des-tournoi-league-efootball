@@ -39,7 +39,7 @@ export function ViewerPage() {
       <FadeIn>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="font-display text-4xl tracking-wide">{tournament.name}</h1>
+            <h1 className="font-display text-2xl tracking-wide sm:text-4xl">{tournament.name}</h1>
             <div className="mt-1.5 flex items-center gap-2">
               <TypeBadge type={tournament.type} />
               <span className="text-xs text-slate-500">

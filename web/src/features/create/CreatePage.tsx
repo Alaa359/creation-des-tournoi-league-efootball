@@ -159,7 +159,7 @@ export function CreatePage() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-10">
       <FadeIn>
-        <h1 className="font-display text-4xl tracking-wide">NOUVEAU TOURNOI</h1>
+        <h1 className="font-display text-2xl tracking-wide sm:text-4xl">NOUVEAU TOURNOI</h1>
         <p className="mt-1 text-slate-400">Configurez le format puis invitez vos joueurs.</p>
       </FadeIn>
 
@@ -180,7 +180,7 @@ export function CreatePage() {
 
           <div>
             <span className="mb-2 block text-sm font-bold text-slate-300">Format</span>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {FORMATS.map((f) => (
                 <button
                   key={f.value}

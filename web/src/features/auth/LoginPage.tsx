@@ -31,7 +31,7 @@ export function LoginPage() {
   return (
     <div className="mx-auto max-w-md px-4 py-16">
       <FadeIn>
-        <h1 className="font-display text-4xl tracking-wide text-center">CONNEXION</h1>
+        <h1 className="font-display text-2xl tracking-wide text-center sm:text-4xl">CONNEXION</h1>
         <p className="mt-1 text-center text-slate-400">Accédez à votre espace.</p>
       </FadeIn>
 
