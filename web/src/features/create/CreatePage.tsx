@@ -240,7 +240,7 @@ export function CreatePage() {
           )}
 
           {hasGroups && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <label className="mb-1.5 block text-sm font-bold text-slate-300">
                   Nombre de groupes
@@ -267,7 +267,7 @@ export function CreatePage() {
                 <label className="mb-1.5 block text-sm font-bold text-slate-300">
                   Qualifiés par groupe
                 </label>
-                <div className="inline-flex rounded-xl border border-white/10 bg-black/20 p-1">
+                <div className="grid grid-cols-2 gap-1.5 sm:inline-flex sm:grid-cols-none sm:flex-wrap sm:gap-0">
                   {[1, 2, 3, 4].map((k) => (
                     <button
                       key={k}
