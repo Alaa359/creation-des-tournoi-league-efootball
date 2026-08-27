@@ -167,36 +167,36 @@ export function AdminDashboard() {
               const uTournaments = userTournaments(u.id);
               return (
                 <div key={u.id}>
-                  <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
-                    <div>
+                  <Card className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
                       <p className="font-bold text-white">{u.name}</p>
-                      <p className="text-xs text-slate-400">{u.email}</p>
+                      <p className="truncate text-xs text-slate-400">{u.email}</p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
                       <button
                         type="button"
-                        className="btn-ghost px-3 py-1.5 text-xs"
+                        className="btn-ghost w-full px-3 py-2 text-xs sm:w-auto sm:py-1.5"
                         onClick={() => setOpenUser(isOpen ? null : u.id)}
                       >
                         {isOpen ? 'Masquer les tournois' : `Voir les tournois de ${u.name}`}
                       </button>
                       <button
                         type="button"
-                        className="btn-ghost px-3 py-1.5 text-xs"
+                        className="btn-ghost w-full px-3 py-2 text-xs sm:w-auto sm:py-1.5"
                         onClick={() => resetPassword(u)}
                       >
-                        Réinitialiser mot de passe
+                        Réinitialiser
                       </button>
                       <button
                         type="button"
-                        className="btn-danger px-3 py-1.5 text-xs"
+                        className="btn-danger w-full px-3 py-2 text-xs sm:w-auto sm:py-1.5"
                         onClick={() => api.adminRejectUser(u.id).then(refresh)}
                       >
                         Désactiver
                       </button>
                       <button
                         type="button"
-                        className="btn-danger px-3 py-1.5 text-xs"
+                        className="btn-danger w-full px-3 py-2 text-xs sm:w-auto sm:py-1.5"
                         onClick={() => {
                           if (window.confirm(`Supprimer le compte de ${u.name} ?`)) {
                             api.adminDeleteUser(u.id).then(refresh);
