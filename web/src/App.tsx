@@ -75,45 +75,40 @@ function Header() {
               </button>
             </>
           ) : (
-            <>
-              <NavLink to="/login" className={navLinkClass}>Connexion</NavLink>
-              <NavLink to="/register" className="btn-primary !px-3 !py-1.5 !text-sm">Inscription</NavLink>
-            </>
+            <NavLink to="/login" className="btn-primary !px-3 !py-1.5 !text-sm">Connexion</NavLink>
           )}
         </nav>
 
         {/* Mobile hamburger */}
-        <button
-          type="button"
-          onClick={() => setMenuOpen(!menuOpen)}
-          className="flex flex-col items-center justify-center gap-1 sm:hidden"
-          aria-label="Menu"
-        >
-          <span className={`block h-0.5 w-6 bg-slate-300 transition-transform ${menuOpen ? 'translate-y-1.5 rotate-45' : ''}`} />
-          <span className={`block h-0.5 w-6 bg-slate-300 transition-opacity ${menuOpen ? 'opacity-0' : ''}`} />
-          <span className={`block h-0.5 w-6 bg-slate-300 transition-transform ${menuOpen ? '-translate-y-1.5 -rotate-45' : ''}`} />
-        </button>
+        {user && (
+          <button
+            type="button"
+            onClick={() => setMenuOpen(!menuOpen)}
+            className="flex flex-col items-center justify-center gap-1 sm:hidden"
+            aria-label="Menu"
+          >
+            <span className={`block h-0.5 w-6 bg-slate-300 transition-transform ${menuOpen ? 'translate-y-1.5 rotate-45' : ''}`} />
+            <span className={`block h-0.5 w-6 bg-slate-300 transition-opacity ${menuOpen ? 'opacity-0' : ''}`} />
+            <span className={`block h-0.5 w-6 bg-slate-300 transition-transform ${menuOpen ? '-translate-y-1.5 -rotate-45' : ''}`} />
+          </button>
+        )}
+        {!user && (
+          <NavLink to="/login" className="btn-primary !px-3 !py-1.5 !text-sm sm:hidden">Connexion</NavLink>
+        )}
       </div>
 
       {/* Mobile menu dropdown */}
       {menuOpen && (
         <nav className="border-t border-white/10 bg-[#0b0f19]/95 px-4 py-3 sm:hidden">
-          {user ? (
-            <div className="flex flex-col gap-1">
-              <NavLink to="/create" className={navLinkClass} onClick={closeMenu}>Créer un tournoi</NavLink>
-              {user.role === 'admin' && (
-                <NavLink to="/admin" className={navLinkClass} onClick={closeMenu}>Admin</NavLink>
-              )}
-              <button type="button" onClick={logout} className="rounded-lg px-3 py-2 text-left text-slate-400 transition hover:bg-white/5 hover:text-slate-200">
-                Déconnexion
-              </button>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-1">
-              <NavLink to="/login" className={navLinkClass} onClick={closeMenu}>Connexion</NavLink>
-              <NavLink to="/register" className="btn-primary !text-sm" onClick={closeMenu}>Inscription</NavLink>
-            </div>
-          )}
+          <div className="flex flex-col gap-1">
+            <NavLink to="/create" className={navLinkClass} onClick={closeMenu}>Créer un tournoi</NavLink>
+            {user?.role === 'admin' && (
+              <NavLink to="/admin" className={navLinkClass} onClick={closeMenu}>Admin</NavLink>
+            )}
+            <button type="button" onClick={logout} className="rounded-lg px-3 py-2 text-left text-slate-400 transition hover:bg-white/5 hover:text-slate-200">
+              Déconnexion
+            </button>
+          </div>
         </nav>
       )}
     </header>
@@ -134,19 +129,30 @@ function HomePage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
-      {!user && (
-        <FadeIn className="mb-10 text-center">
-          <h1 className="font-display text-3xl tracking-wide sm:text-5xl lg:text-7xl">
-            EFOOTBALL <span className="text-lime-400">CUP</span>
-          </h1>
-          <p className="mx-auto mt-3 max-w-xl font-display text-lg tracking-wide text-slate-400 sm:text-2xl">
-            Tournois entre amis
+      <FadeIn className="mb-10 text-center">
+        <h1 className="font-display text-3xl tracking-wide sm:text-5xl lg:text-7xl">
+          ORGANISEZ VOS <span className="bg-gradient-to-r from-lime-300 to-emerald-400 bg-clip-text text-transparent">TOURNOIS EFOOTBALL</span>
+        </h1>
+        <p className="mx-auto mt-4 max-w-xl font-display text-lg tracking-wide text-lime-200 sm:text-2xl">
+          Bienvenue sur le site Championnat Rafraf eFootball
+        </p>
+        <div className="mt-6 flex justify-center gap-3">
+          {user ? (
+            <Link to="/create" className="btn-primary text-lg">
+              Créer un tournoi
+            </Link>
+          ) : (
+            <Link to="/register" className="btn-primary text-lg">
+              S'inscrire pour créer
+            </Link>
+          )}
+        </div>
+        {user && !user.approved && (
+          <p className="mt-3 text-sm text-amber-300">
+            Votre compte est en attente d'approbation par l'administrateur.
           </p>
-          <Link to="/login" className="btn-primary mt-6 text-lg">
-            Connexion
-          </Link>
-        </FadeIn>
-      )}
+        )}
+      </FadeIn>
 
       <section>
         <h2 className="font-display mb-4 text-2xl tracking-wide text-slate-300">
