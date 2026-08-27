@@ -268,7 +268,7 @@ export function CreatePage() {
                   Qualifiés par groupe
                 </label>
                 <div className="inline-flex rounded-xl border border-white/10 bg-black/20 p-1">
-                  {[1, 2].map((k) => (
+                  {[1, 2, 3, 4].map((k) => (
                     <button
                       key={k}
                       type="button"
@@ -281,7 +281,7 @@ export function CreatePage() {
                           : 'text-slate-300 hover:bg-white/5'
                       }`}
                     >
-                      {k === 1 ? 'Le 1er' : 'Les 2 premiers'}
+                      {k === 1 ? 'Le 1er' : `Les ${k} premiers`}
                     </button>
                   ))}
                 </div>
