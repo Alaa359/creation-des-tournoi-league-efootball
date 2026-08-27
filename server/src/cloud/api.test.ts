@@ -174,6 +174,43 @@ describe('cloud api — santé & auth', () => {
     );
     expect(res.status).toBe(201);
   });
+
+  it('lien partagé : un invité (sans session) peut voir un tournoi, même pending', async () => {
+    const store = memoryStore();
+    const cookie = await setupAdmin(store);
+
+    const created = (await (
+      await handleApi(
+        req('/tournaments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', cookie },
+          body: JSON.stringify({
+            name: 'Privé Cup', type: 'league', doubleRound: false, players: ['A', 'B', 'C'],
+          }),
+        }),
+        store,
+        env,
+      )
+    ).json()) as { id: string; status: string };
+
+    // Passe le tournoi en "pending" (ex.: rejeté/à valider) puis vérifie que
+    // le lien direct reste visible pour un visiteur sans session.
+    await handleApi(
+      req(`/admin/tournaments/${created.id}/reject`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', cookie },
+        body: JSON.stringify({ reason: 'à corriger' }),
+      }),
+      store,
+      env,
+    );
+
+    const guestView = await handleApi(req(`/tournaments/${created.id}`), store, env);
+    expect(guestView.status).toBe(200);
+    const body = (await guestView.json()) as { id: string; name: string };
+    expect(body.id).toBe(created.id);
+    expect(body.name).toBe('Privé Cup');
+  });
 });
 
 describe('cloud api — cycle de vie league complet', () => {

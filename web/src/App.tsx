@@ -115,11 +115,15 @@ function HomePage() {
   const { user } = useAuth();
 
   useEffect(() => {
+    if (!user) {
+      setItems(null);
+      return;
+    }
     api
-      .listTournaments()
+      .myTournaments()
       .then(setItems)
       .catch((e: Error) => setError(e.message));
-  }, []);
+  }, [user]);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
@@ -150,21 +154,26 @@ function HomePage() {
 
       <section>
         <h2 className="font-display mb-4 text-2xl tracking-wide text-slate-300">
-          Derniers tournois
+          Mes tournois
         </h2>
-        {error && <Card className="p-6 text-red-300">{error}</Card>}
-        {!error && items === null && (
+        {!user && (
+          <Card className="p-8 text-center text-slate-400">
+            Connectez-vous pour retrouver vos tournois ici.
+          </Card>
+        )}
+        {user && error && <Card className="p-6 text-red-300">{error}</Card>}
+        {user && !error && items === null && (
           <div className="py-14">
             <BallLoader />
           </div>
         )}
-        {items !== null && items.length === 0 && (
+        {user && items !== null && items.length === 0 && (
           <Card className="p-8 text-center text-slate-400">
             Aucun tournoi pour l'instant. Lancez le premier coup d'envoi !
           </Card>
         )}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {(items ?? []).map((t, i) => (
+          {(user ? items ?? [] : []).map((t, i) => (
             <FadeIn key={t.id} delay={i * 0.05}>
               <Link to={`/t/${t.id}`}>
                 <Card className="group h-full p-5 transition hover:border-lime-400/40 hover:bg-white/[0.08]">

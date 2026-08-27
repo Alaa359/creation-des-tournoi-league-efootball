@@ -588,17 +588,10 @@ export async function handleApiRoute(
     const state = await readState(store);
     const idx = state.tournaments.findIndex((x) => x.id === id);
 
-    // GET /tournaments/:id
+    // GET /tournaments/:id — lien partagé : visible par quiconque possède le lien
     if (seg.length === 2 && method === 'GET') {
       if (idx < 0) throw new HttpError(404, 'Tournoi introuvable');
-      const t = state.tournaments[idx];
-      if (t.status === 'pending') {
-        const user = await currentUser(req, env, store);
-        if (!user || (t.createdBy !== user.id && user.role !== 'admin')) {
-          throw new HttpError(404, 'Tournoi introuvable');
-        }
-      }
-      return json(publicView(t));
+      return json(publicView(state.tournaments[idx]));
     }
 
     // DELETE /tournaments/:id
