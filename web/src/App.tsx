@@ -1,15 +1,42 @@
 import { useEffect, useState } from 'react';
-import { Link, NavLink, Route, Routes, useLocation } from 'react-router';
+import { Link, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { AnimatePresence, motion } from 'motion/react';
 import { api, type TournamentSummary } from './shared/api';
-import { AuthGate } from './shared/AuthGate';
+import { AuthProvider, useAuth } from './shared/AuthContext';
 import { Card, FadeIn, Spinner, TypeBadge } from './ui/primitives';
 import { BallLoader, BackgroundSlideshow } from './ui/fx';
 import { CreatePage } from './features/create/CreatePage';
 import { AdminPage } from './features/admin/AdminPage';
+import { AdminDashboard } from './features/admin/AdminDashboard';
 import { ViewerPage } from './features/view/ViewerPage';
+import { LoginPage } from './features/auth/LoginPage';
+import { RegisterPage } from './features/auth/RegisterPage';
+
+function daysRemaining(expiresAt?: string): number | null {
+  if (!expiresAt) return null;
+  const ms = new Date(expiresAt).getTime() - Date.now();
+  return Math.max(0, Math.ceil(ms / (1000 * 60 * 60 * 24)));
+}
+
+function ExpiryBadge({ expiresAt }: { expiresAt?: string }) {
+  const days = daysRemaining(expiresAt);
+  if (days === null) return null;
+  if (days === 0) return <span className="text-xs font-bold text-red-400">Expire aujourd'hui</span>;
+  if (days <= 3) return <span className="text-xs font-bold text-amber-400">⏱ {days}j restant{days > 1 ? 's' : ''}</span>;
+  if (days <= 7) return <span className="text-xs text-amber-300/70">{days}j</span>;
+  return null;
+}
 
 function Header() {
+  const { user, refresh } = useAuth();
+  const navigate = useNavigate();
+
+  const logout = async () => {
+    await api.logout();
+    await refresh();
+    navigate('/');
+  };
+
   return (
     <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0b0f19]/80 backdrop-blur-md">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
@@ -41,14 +68,52 @@ function Header() {
             />
             Accueil
           </NavLink>
-          <NavLink
-            to="/create"
-            className={({ isActive }) =>
-              `rounded-lg px-3 py-1.5 transition ${isActive ? 'bg-lime-400/15 text-lime-300' : 'text-slate-300 hover:bg-white/5'}`
-            }
-          >
-            Créer
-          </NavLink>
+          {user ? (
+            <>
+              <NavLink
+                to="/create"
+                className={({ isActive }) =>
+                  `rounded-lg px-3 py-1.5 transition ${isActive ? 'bg-lime-400/15 text-lime-300' : 'text-slate-300 hover:bg-white/5'}`
+                }
+              >
+                Créer
+              </NavLink>
+              {user.role === 'admin' && (
+                <NavLink
+                  to="/admin"
+                  className={({ isActive }) =>
+                    `rounded-lg px-3 py-1.5 transition ${isActive ? 'bg-amber-400/15 text-amber-300' : 'text-slate-300 hover:bg-white/5'}`
+                  }
+                >
+                  Admin
+                </NavLink>
+              )}
+              <button
+                type="button"
+                onClick={logout}
+                className="rounded-lg px-3 py-1.5 text-slate-400 transition hover:bg-white/5 hover:text-slate-200"
+              >
+                Déconnexion
+              </button>
+            </>
+          ) : (
+            <>
+              <NavLink
+                to="/login"
+                className={({ isActive }) =>
+                  `rounded-lg px-3 py-1.5 transition ${isActive ? 'bg-lime-400/15 text-lime-300' : 'text-slate-300 hover:bg-white/5'}`
+                }
+              >
+                Connexion
+              </NavLink>
+              <NavLink
+                to="/register"
+                className="btn-primary !px-3 !py-1.5 !text-sm"
+              >
+                Inscription
+              </NavLink>
+            </>
+          )}
         </nav>
       </div>
     </header>
@@ -58,6 +123,7 @@ function Header() {
 function HomePage() {
   const [items, setItems] = useState<TournamentSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { user } = useAuth();
 
   useEffect(() => {
     api
@@ -76,16 +142,27 @@ function HomePage() {
           Bienvenue sur le site Championnat Rafraf eFootball
         </p>
         <div className="mt-6 flex justify-center gap-3">
-          <Link to="/create" className="btn-primary text-lg">
-            <img
-              src="/logos/trophy-cup.svg"
-              alt=""
-              aria-hidden
-              className="h-7 w-auto drop-shadow-[0_2px_6px_rgba(6,78,59,0.4)]"
-            />
-            Créer un tournoi
-          </Link>
+          {user ? (
+            <Link to="/create" className="btn-primary text-lg">
+              <img
+                src="/logos/trophy-cup.svg"
+                alt=""
+                aria-hidden
+                className="h-7 w-auto drop-shadow-[0_2px_6px_rgba(6,78,59,0.4)]"
+              />
+              Créer un tournoi
+            </Link>
+          ) : (
+            <Link to="/register" className="btn-primary text-lg">
+              S'inscrire pour créer
+            </Link>
+          )}
         </div>
+        {user && !user.approved && (
+          <p className="mt-3 text-sm text-amber-300">
+            Votre compte est en attente d'approbation par l'administrateur.
+          </p>
+        )}
       </FadeIn>
 
       <section>
@@ -120,6 +197,7 @@ function HomePage() {
                   <p className="mt-1 text-sm text-slate-400">
                     👥 {t.playerCount} joueur{t.playerCount > 1 ? 's' : ''}
                   </p>
+                  <ExpiryBadge expiresAt={t.expiresAt} />
                 </Card>
               </Link>
             </FadeIn>
@@ -142,47 +220,55 @@ function NotFound() {
   );
 }
 
+function RequireAuth({ children, adminOnly = false }: { children: React.ReactNode; adminOnly?: boolean }) {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="py-24 text-center"><Spinner /></div>;
+  if (!user) return <div className="mx-auto max-w-md px-4 py-24 text-center"><Card className="p-8 text-center"><p className="text-slate-300 font-bold">Connexion requise</p><Link to="/login" className="btn-primary mt-4 inline-flex">Se connecter</Link></Card></div>;
+  if (adminOnly && user.role !== 'admin') return <div className="mx-auto max-w-md px-4 py-24 text-center"><Card className="p-8 text-center text-red-300">Accès administrateur requis</Card></div>;
+  return <>{children}</>;
+}
+
 export default function App() {
   const location = useLocation();
   return (
-    <div className="flex min-h-screen flex-col">
-      <BackgroundSlideshow />
-      <Header />
-      <AnimatePresence mode="wait" initial={false}>
-        <motion.main
-          key={location.pathname}
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -8 }}
-          transition={{ duration: 0.25, ease: 'easeOut' }}
-          className="flex-1"
-        >
-          <Routes location={location}>
-            <Route path="/" element={<HomePage />} />
-            <Route
-              path="/create"
-              element={
-                <AuthGate>
-                  <CreatePage />
-                </AuthGate>
-              }
-            />
-            <Route path="/t/:id" element={<ViewerPage />} />
-            <Route
-              path="/t/:id/admin"
-              element={
-                <AuthGate>
-                  <AdminPage />
-                </AuthGate>
-              }
-            />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </motion.main>
-      </AnimatePresence>
-      <footer className="border-t border-white/5 py-6 text-center text-xs text-slate-600">
-        eFootball Cup · fait pour jouer entre amis
-      </footer>
-    </div>
+    <AuthProvider>
+      <div className="flex min-h-screen flex-col">
+        <BackgroundSlideshow />
+        <Header />
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.main
+            key={location.pathname}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
+            className="flex-1"
+          >
+            <Routes location={location}>
+              <Route path="/" element={<HomePage />} />
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
+              <Route
+                path="/create"
+                element={<RequireAuth><CreatePage /></RequireAuth>}
+              />
+              <Route
+                path="/admin"
+                element={<RequireAuth adminOnly><AdminDashboard /></RequireAuth>}
+              />
+              <Route path="/t/:id" element={<ViewerPage />} />
+              <Route
+                path="/t/:id/admin"
+                element={<RequireAuth><AdminPage /></RequireAuth>}
+              />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </motion.main>
+        </AnimatePresence>
+        <footer className="border-t border-white/5 py-6 text-center text-xs text-slate-600">
+          eFootball Cup · fait pour jouer entre amis
+        </footer>
+      </div>
+    </AuthProvider>
   );
 }

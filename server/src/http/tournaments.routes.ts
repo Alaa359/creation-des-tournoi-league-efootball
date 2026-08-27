@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
   findTournament,
+  findUserById,
+  listPendingTournaments,
   listTournaments,
   persist,
   tournamentSummary,
@@ -30,7 +32,19 @@ import {
   resultSchema,
   type Tournament,
 } from '../domain/types';
-import { loginHandler, logoutHandler, meHandler, requireAdmin, touchSession } from './auth';
+import {
+  loginHandler,
+  logoutHandler,
+  meHandler,
+  registerHandler,
+  requireAdmin,
+  requireAuth,
+  touchSession,
+  adminListUsersHandler,
+  adminApproveUserHandler,
+  adminRejectUserHandler,
+  adminDeleteUserHandler,
+} from './auth';
 import { loginRateLimiter } from './rateLimit';
 import { broadcastUpdate, sseHandler } from './sse';
 
@@ -42,11 +56,63 @@ apiRouter.get('/events/:tournamentId', sseHandler);
 
 apiRouter.use(touchSession);
 
+// ── Auth ──
+apiRouter.post('/auth/register', registerHandler);
 apiRouter.post('/auth/login', loginRateLimiter, loginHandler);
 apiRouter.post('/auth/logout', logoutHandler);
 apiRouter.get('/auth/me', meHandler);
 
-/** Champion d'un tournoi : vainqueur de la dernière confrontation à élimination directe. */
+// ── Admin : users ──
+apiRouter.get('/admin/users', requireAdmin, adminListUsersHandler);
+apiRouter.patch('/admin/users/:userId/approve', requireAdmin, adminApproveUserHandler);
+apiRouter.patch('/admin/users/:userId/reject', requireAdmin, adminRejectUserHandler);
+apiRouter.delete('/admin/users/:userId', requireAdmin, adminDeleteUserHandler);
+
+// ── Admin : tournament approvals ──
+apiRouter.get('/admin/tournaments', requireAdmin, (req, res) => {
+  const pending = listPendingTournaments();
+  res.json(
+    pending.map((t) => ({
+      ...tournamentSummary(t),
+      createdBy: t.createdBy ? findUserById(t.createdBy) : undefined,
+      rejectReason: t.rejectReason,
+    })),
+  );
+});
+
+apiRouter.patch('/admin/tournaments/:id/approve', requireAdmin, async (req, res) => {
+  const t = findTournament(String(req.params.id));
+  if (!t) throw new HttpError(404, 'Tournoi introuvable');
+  t.status = 'active';
+  delete t.rejectReason;
+  await upsertTournament(t);
+  broadcastUpdate(t.id);
+  logger.info({ tournamentId: t.id }, 'Tournoi approuvé');
+  res.json({ ok: true });
+});
+
+apiRouter.patch('/admin/tournaments/:id/reject', requireAdmin, async (req, res) => {
+  const t = findTournament(String(req.params.id));
+  if (!t) throw new HttpError(404, 'Tournoi introuvable');
+  t.status = 'pending';
+  t.rejectReason = req.body?.reason || 'Refusé par l\'administrateur';
+  await upsertTournament(t);
+  broadcastUpdate(t.id);
+  logger.info({ tournamentId: t.id }, 'Tournoi refusé');
+  res.json({ ok: true });
+});
+
+// ── My tournaments ──
+apiRouter.get('/my/tournaments', requireAuth, (req, res) => {
+  const userId = (req as any).userId as string;
+  const user = findUserById(userId);
+  const all = listTournaments();
+  const mine = user?.role === 'admin' ? all : all.filter((t) => t.createdBy === userId);
+  res.json(mine.map(tournamentSummary));
+});
+
+// ── Helpers ──
+
 function championOf(t: Tournament): string | null {
   const ko = t.matches.filter((m) => isKnockoutMatch(t, m));
   if (ko.length === 0) return null;
@@ -55,7 +121,6 @@ function championOf(t: Tournament): string | null {
   return finalTie ? tieWinner(ko, finalTie) : null;
 }
 
-/** Snapshot public : tournoi + classements calculés + champion (formats avec éliminations). */
 function publicView(t: Tournament) {
   if (t.type === 'playoff') {
     const rr = roundRobinMatches(t);
@@ -85,7 +150,6 @@ function publicView(t: Tournament) {
     );
     return { ...t, groupStandings, championId: championOf(t) };
   }
-  // league et league-knockout : classement limité à la phase championnat
   const scope = t.type === 'league-knockout' ? roundRobinMatches(t) : t.matches;
   return { ...t, standings: computeStandings(t.players, scope), championId: championOf(t) };
 }
@@ -132,7 +196,10 @@ function anyMatchPlayed(t: Tournament): boolean {
   return t.matches.some((m) => m.homeScore != null || m.awayScore != null);
 }
 
-apiRouter.post('/tournaments', requireAdmin, async (req, res) => {
+// ── Tournament CRUD ──
+
+apiRouter.post('/tournaments', requireAuth, async (req, res) => {
+  const userId = (req as any).userId as string;
   const input = createTournamentSchema.parse(req.body);
   const t: Tournament = {
     id: randomBytes(5).toString('base64url'),
@@ -142,6 +209,8 @@ apiRouter.post('/tournaments', requireAdmin, async (req, res) => {
     createdAt: new Date().toISOString(),
     players: input.players.map((name) => ({ id: randomUUID(), name })),
     matches: [],
+    createdBy: userId,
+    status: 'active',
     ...(input.type === 'league-knockout' ? { qualifiers: input.qualifiers } : {}),
     ...(input.type === 'groups-knockout'
       ? { groupsCount: input.groupsCount, qualifiedPerGroup: input.qualifiedPerGroup ?? 1 }
@@ -153,32 +222,48 @@ apiRouter.post('/tournaments', requireAdmin, async (req, res) => {
   rebuildSchedule(t);
   await upsertTournament(t);
   broadcastUpdate(t.id);
-  logger.info({ tournamentId: t.id, type: t.type, players: t.players.length }, 'Tournoi créé');
+  logger.info({ tournamentId: t.id, type: t.type, players: t.players.length, createdBy: userId }, 'Tournoi créé');
   res.status(201).json(publicView(t));
 });
 
 apiRouter.get('/tournaments', (_req, res) => {
-  res.json(listTournaments().map(tournamentSummary));
+  res.json(
+    listTournaments()
+      .filter((t) => t.status === 'active')
+      .map(tournamentSummary),
+  );
 });
 
 apiRouter.get('/tournaments/:id', (req, res) => {
   const t = findTournament(String(req.params.id));
   if (!t) throw new HttpError(404, 'Tournoi introuvable');
+  if (t.status !== 'active') throw new HttpError(404, 'Tournoi introuvable');
   res.json(publicView(t));
 });
 
-apiRouter.delete('/tournaments/:id', requireAdmin, async (req, res) => {
+apiRouter.delete('/tournaments/:id', requireAuth, async (req, res) => {
+  const userId = (req as any).userId as string;
   const id = String(req.params.id);
-  const removed = await deleteTournament(id);
-  if (!removed) throw new HttpError(404, 'Tournoi introuvable');
+  const t = findTournament(id);
+  if (!t) throw new HttpError(404, 'Tournoi introuvable');
+  const user = findUserById(userId);
+  if (user?.role !== 'admin' && t.createdBy !== userId) {
+    throw new HttpError(403, 'Vous ne pouvez supprimer que vos propres tournois');
+  }
+  await deleteTournament(id);
   broadcastUpdate(id);
-  logger.info({ tournamentId: id }, 'Tournoi supprimé');
+  logger.info({ tournamentId: id, deletedBy: userId }, 'Tournoi supprimé');
   res.json({ ok: true });
 });
 
-apiRouter.patch('/tournaments/:id/matches/:matchId/result', requireAdmin, async (req, res) => {
+apiRouter.patch('/tournaments/:id/matches/:matchId/result', requireAuth, async (req, res) => {
+  const userId = (req as any).userId as string;
   const t = findTournament(String(req.params.id));
   if (!t) throw new HttpError(404, 'Tournoi introuvable');
+  const user = findUserById(userId);
+  if (user?.role !== 'admin' && t.createdBy !== userId) {
+    throw new HttpError(403, 'Accès refusé');
+  }
   const input: ResultInput = resultSchema.parse(req.body);
   const matchId = String(req.params.matchId);
   const m = t.matches.find((x) => x.id === matchId);
@@ -204,9 +289,14 @@ apiRouter.patch('/tournaments/:id/matches/:matchId/result', requireAdmin, async 
   res.json(publicView(t));
 });
 
-apiRouter.post('/tournaments/:id/players', requireAdmin, async (req, res) => {
+apiRouter.post('/tournaments/:id/players', requireAuth, async (req, res) => {
+  const userId = (req as any).userId as string;
   const t = findTournament(String(req.params.id));
   if (!t) throw new HttpError(404, 'Tournoi introuvable');
+  const user = findUserById(userId);
+  if (user?.role !== 'admin' && t.createdBy !== userId) {
+    throw new HttpError(403, 'Accès refusé');
+  }
   if (anyMatchPlayed(t)) throw new HttpError(409, 'Le tournoi a démarré : roster verrouillé');
   if (t.players.length >= 32) throw new HttpError(409, 'Maximum 32 joueurs');
   const { name } = addPlayerSchema.parse(req.body);
@@ -220,9 +310,14 @@ apiRouter.post('/tournaments/:id/players', requireAdmin, async (req, res) => {
   res.status(201).json(publicView(t));
 });
 
-apiRouter.delete('/tournaments/:id/players/:playerId', requireAdmin, async (req, res) => {
+apiRouter.delete('/tournaments/:id/players/:playerId', requireAuth, async (req, res) => {
+  const userId = (req as any).userId as string;
   const t = findTournament(String(req.params.id));
   if (!t) throw new HttpError(404, 'Tournoi introuvable');
+  const user = findUserById(userId);
+  if (user?.role !== 'admin' && t.createdBy !== userId) {
+    throw new HttpError(403, 'Accès refusé');
+  }
   if (anyMatchPlayed(t)) throw new HttpError(409, 'Le tournoi a démarré : roster verrouillé');
   const minPlayers = t.type === 'knockout' ? 2 : 3;
   if (t.players.length <= minPlayers) {

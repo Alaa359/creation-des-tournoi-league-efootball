@@ -24,21 +24,18 @@ import {
 import {
   addPlayerSchema,
   createTournamentSchema,
+  registerSchema,
+  loginSchema,
   resultSchema,
   type Tournament,
+  type User,
+  type UserPublic,
 } from '../domain/types';
 import { HttpError } from '../core/errors';
-import {
-  assertLoginAllowed,
-  clearLoginFailures,
-  clientIp,
-  memoryLoginRateStore,
-  recordLoginFailure,
-  type LoginRateStore,
-} from './rateLimit';
 
-/** État persisté (équivalent de data/db.json, ici dans Netlify Blobs). */
+/** État persisté (équivalent de data/db.json, ici dans Netlify Blobs / KV). */
 export interface CloudState {
+  users: User[];
   tournaments: Tournament[];
 }
 
@@ -49,20 +46,52 @@ export interface CloudStore {
 }
 
 export interface CloudEnv {
-  adminPassword: string;
   sessionSecret: string;
-  rateStore?: LoginRateStore;
 }
 
-const fallbackRateStore = memoryLoginRateStore();
+// ── TTL tournois : suppression auto après 30 jours ─────────────────────────
 
-// ── Auth organisateur : cookie HMAC « expiration.signature » ────────────────
+export const TOURNAMENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
-const COOKIE = 'efc_admin';
-const TTL_MS = 10 * 60 * 1000;
+function purgeExpiredTournaments(state: CloudState): number {
+  const cutoff = Date.now() - TOURNAMENT_TTL_MS;
+  const before = state.tournaments.length;
+  state.tournaments = state.tournaments.filter((t) => {
+    const created = new Date(t.createdAt).getTime();
+    return created > cutoff;
+  });
+  return before - state.tournaments.length;
+}
+
+// ── Auth : cookie HMAC « expiration.userId.signature » ─────────────────────
+
+const COOKIE = 'efc_session';
+const TTL_MS = 24 * 60 * 60 * 1000; // 24 heures
+
+// ── Hachage de mot de passe (PBKDF2) ──────────────────────────────────────
+
+async function hashPassword(password: string): Promise<string> {
+  const { randomBytes, createHash } = await import('node:crypto');
+  const salt = randomBytes(16).toString('hex');
+  const hash = createHash('sha256')
+    .update(salt + password)
+    .digest('hex');
+  return `${salt}:${hash}`;
+}
+
+async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  const [salt, expectedHash] = stored.split(':');
+  if (!salt || !expectedHash) return false;
+  const { createHash } = await import('node:crypto');
+  const hash = createHash('sha256')
+    .update(salt + password)
+    .digest('hex');
+  return hash === expectedHash;
+}
 
 function sign(secret: string, payload: string): string {
-  return crypto.createHmac('sha256', secret).update(payload).digest('base64url');
+  const { createHmac } = require('node:crypto');
+  return createHmac('sha256', secret).update(payload).digest('base64url');
 }
 
 function parseCookies(header: string | null): Record<string, string> {
@@ -75,34 +104,99 @@ function parseCookies(header: string | null): Record<string, string> {
   return out;
 }
 
-function verifyToken(secret: string, token: string | undefined): boolean {
-  if (!token || !secret) return false;
+/** Vérifie le token et retourne l'userId ou null. */
+function verifyToken(secret: string, token: string | undefined): string | null {
+  if (!token || !secret) return null;
   const dot = token.lastIndexOf('.');
-  if (dot <= 0) return false;
+  if (dot <= 0) return null;
   const expRaw = token.slice(0, dot);
+  const parts = expRaw.split(':');
+  if (parts.length !== 2) return null;
+  const exp = Number(parts[0]);
+  const userId = parts[1];
+  if (!Number.isFinite(exp) || exp < Date.now()) return null;
   const given = Buffer.from(token.slice(dot + 1));
-  const exp = Number(expRaw);
-  if (!Number.isFinite(exp) || exp < Date.now()) return false;
   const expected = Buffer.from(sign(secret, expRaw));
-  return expected.length === given.length && crypto.timingSafeEqual(expected, given);
+  if (expected.length !== given.length) return null;
+  if (!crypto.timingSafeEqual(expected, given)) return null;
+  return userId;
+}
+
+function makeSessionToken(secret: string, userId: string): string {
+  const exp = Date.now() + TTL_MS;
+  const payload = `${exp}:${userId}`;
+  return `${payload}.${sign(secret, payload)}`;
+}
+
+let _cachedState: CloudState | null = null;
+
+/** Reset in-memory cache (for tests only). */
+export function _resetState(): void {
+  _cachedState = null;
+  _loginFailures.clear();
+}
+
+// ── Simple in-memory login rate limiter ──
+const _loginFailures = new Map<string, { count: number; resetAt: number }>();
+const RATE_WINDOW_MS = 15 * 60 * 1000;
+const RATE_MAX = 5;
+
+function checkLoginRate(ip: string): { ok: boolean; retryAfter?: number } {
+  const now = Date.now();
+  const bucket = _loginFailures.get(ip);
+  if (bucket && bucket.resetAt > now && bucket.count >= RATE_MAX) {
+    return { ok: false, retryAfter: Math.ceil((bucket.resetAt - now) / 1000) };
+  }
+  return { ok: true };
+}
+
+function recordLoginFailure(ip: string): void {
+  const now = Date.now();
+  const bucket = _loginFailures.get(ip);
+  if (!bucket || bucket.resetAt <= now) {
+    _loginFailures.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
+  } else {
+    bucket.count += 1;
+  }
+}
+
+function clearLoginFailures(ip: string): void {
+  _loginFailures.delete(ip);
+}
+
+function clientIp(req: Request): string {
+  const forwarded = req.headers.get('x-forwarded-for');
+  if (forwarded) return forwarded.split(',')[0].trim();
+  return '127.0.0.1';
+}
+
+function currentUser(req: Request, env: CloudEnv): User | null {
+  const token = verifyToken(env.sessionSecret, parseCookies(req.headers.get('cookie'))[COOKIE]);
+  if (!token) return null;
+  const state = _cachedState ?? { users: [], tournaments: [] };
+  return state.users.find((u) => u.id === token) ?? null;
 }
 
 function isAdmin(req: Request, env: CloudEnv): boolean {
-  return verifyToken(env.sessionSecret, parseCookies(req.headers.get('cookie'))[COOKIE]);
+  const user = currentUser(req, env);
+  return user?.role === 'admin';
 }
 
-/** Session glissante : repousse l'expiration sauf sur /auth/me (sonde de l'interface). */
-function refreshedSessionResponse(req: Request, env: CloudEnv, res: Response): Response {
-  if (!isAdmin(req, env) || res.headers.has('Set-Cookie') || routeOf(req) === '/auth/me') {
-    return res;
-  }
-  const exp = Date.now() + TTL_MS;
-  const headers = new Headers(res.headers);
-  headers.set(
-    'Set-Cookie',
-    `${COOKIE}=${exp}.${sign(env.sessionSecret, String(exp))}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(TTL_MS / 1000)}`,
-  );
-  return new Response(res.body, { status: res.status, headers });
+function requireUser(req: Request, env: CloudEnv): User {
+  const user = currentUser(req, env);
+  if (!user) throw new HttpError(401, 'Connexion requise');
+  return user;
+}
+
+function requireApprovedUser(req: Request, env: CloudEnv): User {
+  const user = requireUser(req, env);
+  if (!user.approved) throw new HttpError(403, "Compte en attente d'approbation par l'administrateur");
+  return user;
+}
+
+function userPublic(u: User): UserPublic {
+  const { passwordHash, ...rest } = u;
+  return rest;
 }
 
 function routeOf(req: Request): string {
@@ -173,6 +267,8 @@ function tournamentSummary(t: Tournament) {
     type: t.type,
     createdAt: t.createdAt,
     playerCount: t.players.length,
+    status: t.status ?? 'active',
+    expiresAt: new Date(new Date(t.createdAt).getTime() + TOURNAMENT_TTL_MS).toISOString(),
   };
 }
 
@@ -228,6 +324,22 @@ async function readJsonBody(req: Request): Promise<unknown> {
   }
 }
 
+async function readState(store: CloudStore): Promise<CloudState> {
+  if (!_cachedState) {
+    _cachedState = (await store.read()) ?? { users: [], tournaments: [] };
+    const purged = purgeExpiredTournaments(_cachedState);
+    if (purged > 0) {
+      await store.write(_cachedState);
+    }
+  }
+  return _cachedState;
+}
+
+async function writeState(store: CloudStore, state: CloudState): Promise<void> {
+  _cachedState = state;
+  await store.write(state);
+}
+
 /**
  * Traite une requête /api/* sans framework, compatible Netlify Functions v2.
  * Le préfixe (/api ou /.netlify/functions/api) est déjà retiré par l'appelant.
@@ -244,31 +356,71 @@ export async function handleApiRoute(
   // ── Santé ──
   if (route === '/health') return json({ ok: true });
 
-  // ── Auth ──
-  if (route === '/auth/login' && method === 'POST') {
-    const rateStore = env.rateStore ?? fallbackRateStore;
-    const ip = clientIp(req);
-    await assertLoginAllowed(rateStore, ip);
-    if (!env.adminPassword) {
-      return json({ error: 'Mot de passe incorrect' }, { status: 401 });
+  // ════════════════════════════════════════════════════════════════════════
+  //  AUTH : inscription, connexion, déconnexion, session
+  // ════════════════════════════════════════════════════════════════════════
+
+  // POST /auth/register
+  if (route === '/auth/register' && method === 'POST') {
+    const body = registerSchema.parse(await readJsonBody(req));
+    const state = await readState(store);
+    if (state.users.some((u) => u.email.toLowerCase() === body.email.toLowerCase())) {
+      throw new HttpError(409, 'Un compte avec cet email existe déjà');
     }
-    const body = (await readJsonBody(req)) as { password?: unknown };
-    if (typeof body.password !== 'string' || body.password !== env.adminPassword) {
-      await recordLoginFailure(rateStore, ip);
-      return json({ error: 'Mot de passe incorrect' }, { status: 401 });
-    }
-    await clearLoginFailures(rateStore, ip);
-    const exp = Date.now() + TTL_MS;
-    return json(
-      { ok: true },
-      {
-        headers: {
-          'Set-Cookie': `${COOKIE}=${exp}.${sign(env.sessionSecret, String(exp))}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(TTL_MS / 1000)}`,
-        },
+    const isFirst = state.users.length === 0;
+    const user: User = {
+      id: crypto.randomUUID(),
+      name: body.name,
+      email: body.email.toLowerCase(),
+      passwordHash: await hashPassword(body.password),
+      role: isFirst ? 'admin' : 'user',
+      approved: isFirst,
+      createdAt: new Date().toISOString(),
+    };
+    state.users.push(user);
+    await writeState(store, state);
+    const res = json({ ok: true, user: userPublic(user) }, { status: 201 });
+    return new Response(res.body, {
+      status: res.status,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Set-Cookie': `${COOKIE}=${makeSessionToken(env.sessionSecret, user.id)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(TTL_MS / 1000)}`,
       },
-    );
+    });
   }
 
+  // POST /auth/login
+  if (route === '/auth/login' && method === 'POST') {
+    const ip = clientIp(req);
+    const rateCheck = checkLoginRate(ip);
+    if (!rateCheck.ok) {
+      return new Response(JSON.stringify({ error: `Trop de tentatives. Réessayez dans ${Math.max(1, Math.ceil((rateCheck.retryAfter ?? 0) / 60))} min.` }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json', 'Retry-After': String(rateCheck.retryAfter) },
+      });
+    }
+    const body = loginSchema.parse(await readJsonBody(req));
+    const state = await readState(store);
+    const user = state.users.find((u) => u.email === body.email.toLowerCase());
+    if (!user || !(await verifyPassword(body.password, user.passwordHash))) {
+      recordLoginFailure(ip);
+      throw new HttpError(401, 'Email ou mot de passe incorrect');
+    }
+    if (!user.approved) {
+      throw new HttpError(403, "Compte en attente d'approbation par l'administrateur");
+    }
+    clearLoginFailures(ip);
+    const res = json({ ok: true, user: userPublic(user) });
+    return new Response(res.body, {
+      status: res.status,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Set-Cookie': `${COOKIE}=${makeSessionToken(env.sessionSecret, user.id)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(TTL_MS / 1000)}`,
+      },
+    });
+  }
+
+  // POST /auth/logout
   if (route === '/auth/logout' && method === 'POST') {
     return json(
       { ok: true },
@@ -276,17 +428,124 @@ export async function handleApiRoute(
     );
   }
 
-  if (route === '/auth/me') return json({ admin: isAdmin(req, env) });
+  // GET /auth/me
+  if (route === '/auth/me') {
+    const user = currentUser(req, env);
+    if (!user) return json({ user: null });
+    return json({ user: userPublic(user) });
+  }
 
-  // ── Tournois ──
-  if (route === '/tournaments' && method === 'GET') {
-    const state = (await store.read()) ?? { tournaments: [] };
+  // ════════════════════════════════════════════════════════════════════════
+  //  ADMIN : gestion des utilisateurs
+  // ════════════════════════════════════════════════════════════════════════
+
+  // GET /admin/users
+  if (route === '/admin/users' && method === 'GET') {
+    if (!isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
+    const state = await readState(store);
+    return json(state.users.map(userPublic));
+  }
+
+  // PATCH /admin/users/:userId/approve
+  if (seg[0] === 'admin' && seg[1] === 'users' && seg[3] === 'approve' && method === 'PATCH') {
+    if (!isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
+    const state = await readState(store);
+    const user = state.users.find((u) => u.id === seg[2]);
+    if (!user) throw new HttpError(404, 'Utilisateur introuvable');
+    user.approved = true;
+    await writeState(store, state);
+    return json({ ok: true, user: userPublic(user) });
+  }
+
+  // PATCH /admin/users/:userId/reject
+  if (seg[0] === 'admin' && seg[1] === 'users' && seg[3] === 'reject' && method === 'PATCH') {
+    if (!isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
+    const state = await readState(store);
+    const user = state.users.find((u) => u.id === seg[2]);
+    if (!user) throw new HttpError(404, 'Utilisateur introuvable');
+    if (user.role === 'admin') throw new HttpError(400, 'Impossible de désapprouver l\'administrateur');
+    user.approved = false;
+    await writeState(store, state);
+    return json({ ok: true, user: userPublic(user) });
+  }
+
+  // DELETE /admin/users/:userId
+  if (seg[0] === 'admin' && seg[1] === 'users' && seg.length === 3 && method === 'DELETE') {
+    if (!isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
+    const state = await readState(store);
+    const user = state.users.find((u) => u.id === seg[2]);
+    if (!user) throw new HttpError(404, 'Utilisateur introuvable');
+    if (user.role === 'admin') throw new HttpError(400, 'Impossible de supprimer l\'administrateur');
+    state.users = state.users.filter((u) => u.id !== seg[2]);
+    await writeState(store, state);
+    return json({ ok: true });
+  }
+
+  // GET /admin/tournaments (tous, y compris pending)
+  if (route === '/admin/tournaments' && method === 'GET') {
+    if (!isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
+    const state = await readState(store);
     const list = [...state.tournaments].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const users = new Map(state.users.map((u) => [u.id, u]));
+    return json(list.map((t) => ({
+      ...tournamentSummary(t),
+      status: t.status ?? 'active',
+      createdBy: t.createdBy ? userPublic(users.get(t.createdBy)!) : undefined,
+      rejectReason: t.rejectReason,
+    })));
+  }
+
+  // PATCH /admin/tournaments/:id/approve
+  if (seg[0] === 'admin' && seg[1] === 'tournaments' && seg[3] === 'approve' && method === 'PATCH') {
+    if (!isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
+    const state = await readState(store);
+    const t = state.tournaments.find((x) => x.id === seg[2]);
+    if (!t) throw new HttpError(404, 'Tournoi introuvable');
+    t.status = 'active';
+    t.rejectReason = undefined;
+    await writeState(store, state);
+    return json({ ok: true });
+  }
+
+  // PATCH /admin/tournaments/:id/reject
+  if (seg[0] === 'admin' && seg[1] === 'tournaments' && seg[3] === 'reject' && method === 'PATCH') {
+    if (!isAdmin(req, env)) throw new HttpError(403, 'Accès administrateur requis');
+    const state = await readState(store);
+    const t = state.tournaments.find((x) => x.id === seg[2]);
+    if (!t) throw new HttpError(404, 'Tournoi introuvable');
+    const body = await readJsonBody(req) as { reason?: string };
+    t.status = 'pending';
+    t.rejectReason = body.reason ?? 'Demande refusée par l\'administrateur';
+    await writeState(store, state);
+    return json({ ok: true });
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  //  TOURNOIS
+  // ════════════════════════════════════════════════════════════════════════
+
+  // GET /tournaments — liste publique (uniquement les tournois actifs)
+  if (route === '/tournaments' && method === 'GET') {
+    const state = await readState(store);
+    const list = [...state.tournaments]
+      .filter((t) => t.status !== 'pending')
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     return json(list.map(tournamentSummary));
   }
 
+  // GET /my/tournaments — tournois de l'utilisateur connecté (y compris pending)
+  if (route === '/my/tournaments' && method === 'GET') {
+    const user = requireUser(req, env);
+    const state = await readState(store);
+    const list = [...state.tournaments]
+      .filter((t) => t.createdBy === user.id)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return json(list.map((t) => ({ ...tournamentSummary(t), status: t.status ?? 'active' })));
+  }
+
+  // POST /tournaments — création (nécessite compte approuvé)
   if (route === '/tournaments' && method === 'POST') {
-    if (!isAdmin(req, env)) return json({ error: 'Accès organisateur requis' }, { status: 401 });
+    const user = requireApprovedUser(req, env);
     const input = createTournamentSchema.parse(await readJsonBody(req));
     const t: Tournament = {
       id: crypto.randomBytes(5).toString('base64url'),
@@ -296,6 +555,8 @@ export async function handleApiRoute(
       createdAt: new Date().toISOString(),
       players: input.players.map((name) => ({ id: crypto.randomUUID(), name })),
       matches: [],
+      createdBy: user.id,
+      status: 'active',
       ...(input.type === 'league-knockout' ? { qualifiers: input.qualifiers } : {}),
       ...(input.type === 'groups-knockout'
         ? { groupsCount: input.groupsCount, qualifiedPerGroup: input.qualifiedPerGroup ?? 1 }
@@ -305,35 +566,52 @@ export async function handleApiRoute(
         : {}),
     };
     rebuildSchedule(t);
-    const state = (await store.read()) ?? { tournaments: [] };
+    const state = await readState(store);
     state.tournaments.push(t);
-    await store.write(state);
+    await writeState(store, state);
     return json(publicView(t), { status: 201 });
   }
 
+  // ── Tournoi par ID ──
   if (seg[0] === 'tournaments' && seg.length >= 2) {
     const id = decodeURIComponent(seg[1]);
-    const state = (await store.read()) ?? { tournaments: [] };
+    const state = await readState(store);
     const idx = state.tournaments.findIndex((x) => x.id === id);
 
+    // GET /tournaments/:id
     if (seg.length === 2 && method === 'GET') {
       if (idx < 0) throw new HttpError(404, 'Tournoi introuvable');
-      return json(publicView(state.tournaments[idx]));
+      const t = state.tournaments[idx];
+      if (t.status === 'pending') {
+        const user = currentUser(req, env);
+        if (!user || (t.createdBy !== user.id && user.role !== 'admin')) {
+          throw new HttpError(404, 'Tournoi introuvable');
+        }
+      }
+      return json(publicView(t));
     }
 
+    // DELETE /tournaments/:id
     if (seg.length === 2 && method === 'DELETE') {
-      if (!isAdmin(req, env)) return json({ error: 'Accès organisateur requis' }, { status: 401 });
+      const user = requireUser(req, env);
       if (idx < 0) throw new HttpError(404, 'Tournoi introuvable');
+      const t = state.tournaments[idx];
+      if (t.createdBy !== user.id && user.role !== 'admin') {
+        throw new HttpError(403, 'Non autorisé');
+      }
       state.tournaments.splice(idx, 1);
-      await store.write(state);
+      await writeState(store, state);
       return json({ ok: true });
     }
 
-    // /tournaments/:id/matches/:matchId/result
+    // PATCH /tournaments/:id/matches/:matchId/result
     if (seg[2] === 'matches' && seg[4] === 'result' && method === 'PATCH') {
-      if (!isAdmin(req, env)) return json({ error: 'Accès organisateur requis' }, { status: 401 });
+      const user = requireUser(req, env);
       if (idx < 0) throw new HttpError(404, 'Tournoi introuvable');
       const t = state.tournaments[idx];
+      if (t.createdBy !== user.id && user.role !== 'admin') {
+        throw new HttpError(403, 'Non autorisé');
+      }
       const input: ResultInput = resultSchema.parse(await readJsonBody(req));
       const matchId = decodeURIComponent(seg[3]);
       const m = t.matches.find((x) => x.id === matchId);
@@ -348,15 +626,18 @@ export async function handleApiRoute(
       }
       maybeGenerateKnockoutPhase(t);
       maybeGeneratePlayoffPhase(t);
-      await store.write(state);
+      await writeState(store, state);
       return json(publicView(t));
     }
 
     // /tournaments/:id/players[/:playerId]
     if (seg[2] === 'players') {
-      if (!isAdmin(req, env)) return json({ error: 'Accès organisateur requis' }, { status: 401 });
+      const user = requireUser(req, env);
       if (idx < 0) throw new HttpError(404, 'Tournoi introuvable');
       const t = state.tournaments[idx];
+      if (t.createdBy !== user.id && user.role !== 'admin') {
+        throw new HttpError(403, 'Non autorisé');
+      }
 
       if (seg.length === 3 && method === 'POST') {
         if (anyMatchPlayed(t)) throw new HttpError(409, 'Le tournoi a démarré : roster verrouillé');
@@ -367,7 +648,7 @@ export async function handleApiRoute(
         }
         t.players.push({ id: crypto.randomUUID(), name });
         rebuildSchedule(t);
-        await store.write(state);
+        await writeState(store, state);
         return json(publicView(t), { status: 201 });
       }
 
@@ -382,7 +663,7 @@ export async function handleApiRoute(
         t.players = t.players.filter((p) => p.id !== playerId);
         if (t.players.length === before) throw new HttpError(404, 'Joueur introuvable');
         rebuildSchedule(t);
-        await store.write(state);
+        await writeState(store, state);
         return json(publicView(t));
       }
     }
@@ -414,5 +695,5 @@ export async function handleApi(
       res = json({ error: 'Erreur interne' }, { status: 500 });
     }
   }
-  return refreshedSessionResponse(req, env, res);
+  return res;
 }

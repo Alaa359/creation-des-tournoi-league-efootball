@@ -9,6 +9,12 @@ import { BracketTree } from './BracketTree';
 import { AwardsBar } from './AwardsBar';
 import { MatchList } from './MatchList';
 
+function daysRemaining(expiresAt?: string): number | null {
+  if (!expiresAt) return null;
+  const ms = new Date(expiresAt).getTime() - Date.now();
+  return Math.max(0, Math.ceil(ms / (1000 * 60 * 60 * 24)));
+}
+
 export function ViewerPage() {
   const { id } = useParams<{ id: string }>();
   const { tournament, error, live } = useLiveTournament(id);
@@ -39,6 +45,13 @@ export function ViewerPage() {
               <span className="text-xs text-slate-500">
                 👥 {tournament.players.length} joueurs
               </span>
+              {(() => {
+                const days = daysRemaining((tournament as any).expiresAt);
+                if (days === null) return null;
+                if (days === 0) return <span className="text-xs font-bold text-red-400">⚠ Expire aujourd'hui</span>;
+                if (days <= 3) return <span className="text-xs font-bold text-amber-400">⏱ {days}j restant{days > 1 ? 's' : ''}</span>;
+                return null;
+              })()}
             </div>
           </div>
           <div className="flex items-center gap-3">

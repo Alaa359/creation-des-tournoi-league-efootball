@@ -3,6 +3,33 @@ import { z } from 'zod';
 export const tournamentTypes = ['league', 'knockout', 'league-knockout', 'groups-knockout', 'playoff'] as const;
 export type TournamentType = (typeof tournamentTypes)[number];
 
+// ── Utilisateurs ──────────────────────────────────────────────────────────
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  passwordHash: string;
+  role: 'admin' | 'user';
+  approved: boolean;
+  createdAt: string;
+}
+
+export type UserPublic = Omit<User, 'passwordHash'>;
+
+export const registerSchema = z.object({
+  name: z.string().trim().min(2).max(30),
+  email: z.string().trim().email().max(100),
+  password: z.string().min(6).max(100),
+});
+
+export const loginSchema = z.object({
+  email: z.string().trim().email(),
+  password: z.string(),
+});
+
+// ── Joueurs & Matchs ──────────────────────────────────────────────────────
+
 export interface Player {
   id: string;
   name: string;
@@ -42,6 +69,12 @@ export interface Tournament {
   createdAt: string;
   players: Player[];
   matches: Match[];
+  /** ID du créateur (utilisateur) */
+  createdBy?: string;
+  /** Statut d'approbation : pending = en attente, active = approuvé */
+  status?: 'pending' | 'active';
+  /** Raison du rejet (si rejeté) */
+  rejectReason?: string;
   /** league-knockout : nombre de qualifiés pour les éliminations */
   qualifiers?: number;
   /** groups-knockout : nombre de groupes */
@@ -79,7 +112,7 @@ export const createTournamentSchema = z
     players: z.array(nameSchema).min(2).max(32),
     qualifiers: z.number().int().min(2).max(16).optional(),
     groupsCount: z.number().int().min(2).max(8).optional(),
-    qualifiedPerGroup: z.number().int().min(1).max(2).optional(),
+    qualifiedPerGroup: z.number().int().min(1).max(4).optional(),
   })
   .refine((d) => d.type !== 'league' || d.players.length >= 3, {
     message: 'Une league nécessite au moins 3 joueurs',

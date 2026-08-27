@@ -2,11 +2,12 @@ import os from 'node:os';
 import express, { type ErrorRequestHandler } from 'express';
 import { ZodError } from 'zod';
 import { config } from './core/config';
-import { initDb } from './core/db';
+import { initDb, TOURNAMENT_TTL_MS } from './core/db';
 import { HttpError } from './core/errors';
 import { logger } from './core/logger';
 import { apiRouter } from './http/tournaments.routes';
 import { mountStatic } from './http/static';
+import fs from 'node:fs';
 
 const app = express();
 app.disable('x-powered-by');
@@ -62,20 +63,37 @@ function lanAddresses(): string[] {
 async function main(): Promise<void> {
   await initDb();
 
+  // Purge des tournois expirés toutes les heures
+  const PURGE_INTERVAL_MS = 60 * 60 * 1000;
+  setInterval(() => {
+    try {
+      const raw = fs.readFileSync(config.dataFile, 'utf8');
+      const state = JSON.parse(raw) as { tournaments: { createdAt: string }[]; users: unknown[] };
+      const cutoff = Date.now() - TOURNAMENT_TTL_MS;
+      const before = state.tournaments.length;
+      state.tournaments = state.tournaments.filter((t) => {
+        return new Date(t.createdAt).getTime() > cutoff;
+      });
+      if (state.tournaments.length < before) {
+        fs.writeFileSync(config.dataFile, JSON.stringify(state, null, 2), 'utf8');
+        logger.info({ purged: before - state.tournaments.length }, 'Tournois expirés supprimés');
+      }
+    } catch (err) {
+      logger.error({ err }, 'Erreur lors de la purge des tournois expirés');
+    }
+  }, PURGE_INTERVAL_MS).unref();
+
   const server = app.listen(config.port, '0.0.0.0', () => {
     logger.info('── eFootball Cup ──────────────────────────────');
     logger.info(`Local     : http://localhost:${config.port}`);
     for (const ip of lanAddresses()) {
       logger.info(`Réseau LAN : http://${ip}:${config.port}`);
     }
-    logger.info(
-      config.adminPasswordIsDefault
-        ? 'Mot de passe organisateur PAR DÉFAUT ("admin1234") — modifiez ADMIN_PASSWORD dans .env'
-        : 'Mot de passe organisateur personnalisé actif',
-    );
+    logger.info('Système de comptes utilisateur actif');
     if (config.sessionSecretGenerated) {
-      logger.debug('SESSION_SECRET généré à la volée — les sessions admin expirent au redémarrage');
+      logger.debug('SESSION_SECRET généré à la volée — les sessions expirent au redémarrage');
     }
+    logger.info('Tournois supprimés automatiquement après 30 jours');
     logger.info('───────────────────────────────────────────────');
   });
 

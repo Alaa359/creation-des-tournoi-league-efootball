@@ -1,6 +1,5 @@
 import { getStore } from '@netlify/blobs';
 import { handleApi, type CloudState, type CloudStore } from '../../server/src/cloud/api';
-import type { LoginAttemptRecord, LoginRateStore } from '../../server/src/cloud/rateLimit';
 
 /**
  * Point d'entrée Netlify Functions v2 : sert TOUTES les routes /api/*.
@@ -20,37 +19,13 @@ function blobsStore(): CloudStore {
   };
 }
 
-/** Limiteur de tentatives sur Blobs ; l'expiration est gérée à la lecture via resetAt. */
-function blobsRateLimitStore(): LoginRateStore {
-  const store = getStore({ name: 'efootball', consistency: 'strong' });
-  return {
-    async get(key): Promise<LoginAttemptRecord | null> {
-      const rec = (await store.get(`rate/${key}`, { type: 'json' })) as LoginAttemptRecord | null;
-      if (!rec || rec.resetAt <= Date.now()) return null;
-      return rec;
-    },
-    async put(key, value): Promise<void> {
-      if (value.count <= 0) {
-        await store.delete(`rate/${key}`);
-        return;
-      }
-      await store.setJSON(`rate/${key}`, value);
-    },
-  };
-}
-
 export default async (req: Request): Promise<Response> => {
-  const adminPassword = process.env.ADMIN_PASSWORD ?? '';
   const sessionSecret = process.env.SESSION_SECRET ?? '';
-  if (!adminPassword || !sessionSecret) {
+  if (!sessionSecret) {
     console.error(
-      'ADMIN_PASSWORD / SESSION_SECRET manquants : définissez-les dans les variables d’environnement Netlify.',
+      'SESSION_SECRET manquant : définissez-le dans les variables d\'environnement Netlify.',
     );
     return new Response('Configuration serveur incomplète', { status: 500 });
   }
-  return handleApi(req, blobsStore(), {
-    adminPassword,
-    sessionSecret,
-    rateStore: blobsRateLimitStore(),
-  });
+  return handleApi(req, blobsStore(), { sessionSecret });
 };

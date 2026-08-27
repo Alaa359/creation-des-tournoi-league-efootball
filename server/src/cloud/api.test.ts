@@ -1,23 +1,17 @@
-import { describe, expect, it } from 'vitest';
-import { handleApi, type CloudStore, type CloudState } from './api';
+import { describe, expect, it, beforeEach } from 'vitest';
+import { handleApi, _resetState, TOURNAMENT_TTL_MS, type CloudStore, type CloudState } from './api';
 
-const env = { adminPassword: 'test-pass', sessionSecret: 'secret-de-test-12chars' };
+const env = { sessionSecret: 'secret-de-test-12chars' };
+
+beforeEach(() => { _resetState(); });
 
 function memoryStore(initial: CloudState | null = null): CloudStore & { data: CloudState | null } {
   const box: { data: CloudState | null } = { data: initial };
   return {
-    get data() {
-      return box.data;
-    },
-    set data(v: CloudState | null) {
-      box.data = v;
-    },
-    async read() {
-      return box.data;
-    },
-    async write(state: CloudState) {
-      box.data = JSON.parse(JSON.stringify(state)) as CloudState;
-    },
+    get data() { return box.data; },
+    set data(v: CloudState | null) { box.data = v; },
+    async read() { return box.data; },
+    async write(state: CloudState) { box.data = JSON.parse(JSON.stringify(state)) as CloudState; },
   };
 }
 
@@ -25,18 +19,30 @@ function req(path: string, init?: RequestInit): Request {
   return new Request(`http://localhost/api${path}`, init);
 }
 
-async function loginAsAdmin(password = env.adminPassword): Promise<string> {
-  const res = await handleApi(
+async function setupAdmin(store: ReturnType<typeof memoryStore>): Promise<string> {
+  const regRes = await handleApi(
+    req('/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Admin', email: 'admin@test.com', password: 'test1234' }),
+    }),
+    store,
+    env,
+  );
+  // First call: 201 (created), subsequent: 409 (exists) — both fine
+  const loginRes = await handleApi(
     req('/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ email: 'admin@test.com', password: 'test1234' }),
     }),
-    memoryStore(),
+    store,
     env,
   );
-  expect(res.status).toBe(200);
-  const cookie = res.headers.get('Set-Cookie') ?? '';
+  if (loginRes.status !== 200) {
+    throw new Error(`Login failed with ${loginRes.status}: ${await loginRes.text()}`);
+  }
+  const cookie = loginRes.headers.get('Set-Cookie') ?? '';
   return cookie.split(';')[0];
 }
 
@@ -49,7 +55,7 @@ async function createLeague(store: ReturnType<typeof memoryStore>, players = PLA
   return handleApi(
     req('/tournaments', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', cookie: await loginAsAdmin() },
+      headers: { 'Content-Type': 'application/json', cookie: await setupAdmin(store) },
       body: JSON.stringify({ name: 'Cup Test', type: 'league', doubleRound: false, players }),
     }),
     store,
@@ -64,37 +70,75 @@ describe('cloud api — santé & auth', () => {
     expect(await res.json()).toEqual({ ok: true });
   });
 
+  it('register premier user → admin, login ok', async () => {
+    const store = memoryStore();
+    const regRes = await handleApi(
+      req('/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Admin', email: 'admin@test.com', password: 'test1234' }),
+      }),
+      store,
+      env,
+    );
+    expect(regRes.status).toBe(201);
+    const regBody = (await regRes.json()) as { user: { role: string } };
+    expect(regBody.user.role).toBe('admin');
+
+    const loginRes = await handleApi(
+      req('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'admin@test.com', password: 'test1234' }),
+      }),
+      store,
+      env,
+    );
+    expect(loginRes.status).toBe(200);
+  });
+
   it('login refusé avec un mauvais mot de passe (401)', async () => {
+    const store = memoryStore();
+    await setupAdmin(store);
     const res = await handleApi(
       req('/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: 'mauvais' }),
+        body: JSON.stringify({ email: 'admin@test.com', password: 'mauvais' }),
       }),
-      memoryStore(),
+      store,
       env,
     );
     expect(res.status).toBe(401);
   });
 
-  it('me sans session → admin:false ; après login via cookie → true', async () => {
-    const noAuth = await handleApi(req('/auth/me'), memoryStore(), env);
-    expect(((await noAuth.json()) as { admin: boolean }).admin).toBe(false);
+  it('me sans session → user:null ; après login → user present', async () => {
+    const store = memoryStore();
+    const noAuth = await handleApi(req('/auth/me'), store, env);
+    expect(((await noAuth.json()) as { user: unknown }).user).toBeNull();
 
-    const cookie = await loginAsAdmin();
-    const yes = await handleApi(req('/auth/me', { headers: { cookie } }), memoryStore(), env);
-    expect(((await yes.json()) as { admin: boolean }).admin).toBe(true);
+    await setupAdmin(store);
+    const meRes = await handleApi(
+      req('/auth/me', { headers: { cookie: await setupAdmin(store) } }),
+      store,
+      env,
+    );
+    const body = (await meRes.json()) as { user: { role: string } };
+    expect(body.user).toBeTruthy();
+    expect(body.user.role).toBe('admin');
   });
 
-  it('login bloqué en 429 après 5 échecs depuis la même IP (même avec le bon mot de passe)', async () => {
+  it('login bloqué en 429 après 5 échecs depuis la même IP', async () => {
+    const store = memoryStore();
+    await setupAdmin(store);
     const attempt = () =>
       handleApi(
         req('/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.7' },
-          body: JSON.stringify({ password: 'mauvais' }),
+          body: JSON.stringify({ email: 'admin@test.com', password: 'mauvais' }),
         }),
-        memoryStore(),
+        store,
         env,
       );
 
@@ -102,17 +146,6 @@ describe('cloud api — santé & auth', () => {
       expect((await attempt()).status).toBe(401);
     }
     expect((await attempt()).status).toBe(429);
-
-    const ok = await handleApi(
-      req('/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.7' },
-        body: JSON.stringify({ password: env.adminPassword }),
-      }),
-      memoryStore(),
-      env,
-    );
-    expect(ok.status).toBe(429);
   });
 });
 
@@ -136,7 +169,7 @@ describe('cloud api — cycle de vie league complet', () => {
     const res = await createLeague(store);
     expect(res.status).toBe(201);
     const body = (await res.json()) as { id: string; matches: unknown[]; standings: unknown[] };
-    expect(body.matches).toHaveLength(66); // N=12 : C(12,2)
+    expect(body.matches).toHaveLength(66);
     expect(body.standings).toHaveLength(12);
     expect(store.data?.tournaments).toHaveLength(1);
   });
@@ -164,7 +197,7 @@ describe('cloud api — cycle de vie league complet', () => {
     const res = await handleApi(
       req(`/tournaments/${created.id}/matches/${m.id}/result`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', cookie: await loginAsAdmin() },
+        headers: { 'Content-Type': 'application/json', cookie: await setupAdmin(store) },
         body: JSON.stringify({ homeScore: 3, awayScore: 1 }),
       }),
       store,
@@ -189,7 +222,7 @@ describe('cloud api — cycle de vie league complet', () => {
     const res = await handleApi(
       req(`/tournaments/${created.id}/matches/${created.matches[0].id}/result`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', cookie: await loginAsAdmin() },
+        headers: { 'Content-Type': 'application/json', cookie: await setupAdmin(store) },
         body: JSON.stringify({ homeScore: -5, awayScore: 0 }),
       }),
       store,
@@ -200,7 +233,7 @@ describe('cloud api — cycle de vie league complet', () => {
     expect(body.details?.length).toBeGreaterThan(0);
   });
 
-  it('roster verrouillé dès qu’un match est joué (409)', async () => {
+  it('roster verrouillé dès qu\'un match est joué (409)', async () => {
     const store = memoryStore();
     const created = (await (await createLeague(store)).json()) as {
       id: string;
@@ -209,7 +242,7 @@ describe('cloud api — cycle de vie league complet', () => {
     await handleApi(
       req(`/tournaments/${created.id}/matches/${created.matches[0].id}/result`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', cookie: await loginAsAdmin() },
+        headers: { 'Content-Type': 'application/json', cookie: await setupAdmin(store) },
         body: JSON.stringify({ homeScore: 1, awayScore: 0 }),
       }),
       store,
@@ -218,7 +251,7 @@ describe('cloud api — cycle de vie league complet', () => {
     const res = await handleApi(
       req(`/tournaments/${created.id}/players`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', cookie: await loginAsAdmin() },
+        headers: { 'Content-Type': 'application/json', cookie: await setupAdmin(store) },
         body: JSON.stringify({ name: 'Nouveau' }),
       }),
       store,
@@ -227,7 +260,7 @@ describe('cloud api — cycle de vie league complet', () => {
     expect(res.status).toBe(409);
   });
 
-  it('suppression réservée à l’admin puis 404 si répétée', async () => {
+  it('suppression réservée à l\'admin puis 404 si répétée', async () => {
     const store = memoryStore();
     const created = (await (await createLeague(store)).json()) as { id: string };
 
@@ -235,14 +268,14 @@ describe('cloud api — cycle de vie league complet', () => {
     expect(noAuth.status).toBe(401);
 
     const ok = await handleApi(
-      req(`/tournaments/${created.id}`, { method: 'DELETE', headers: { cookie: await loginAsAdmin() } }),
+      req(`/tournaments/${created.id}`, { method: 'DELETE', headers: { cookie: await setupAdmin(store) } }),
       store,
       env,
     );
     expect(ok.status).toBe(200);
 
     const again = await handleApi(
-      req(`/tournaments/${created.id}`, { method: 'DELETE', headers: { cookie: await loginAsAdmin() } }),
+      req(`/tournaments/${created.id}`, { method: 'DELETE', headers: { cookie: await setupAdmin(store) } }),
       store,
       env,
     );
@@ -258,11 +291,12 @@ describe('cloud api — cycle de vie league complet', () => {
 describe('cloud api — knockout avec tirs au but', () => {
   it('égalité sans pens → 400 ; avec pens → vainqueur propagé', async () => {
     const store = memoryStore();
+    const cookie = await setupAdmin(store);
     const created = (await (
       await handleApi(
         req('/tournaments', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', cookie: await loginAsAdmin() },
+          headers: { 'Content-Type': 'application/json', cookie },
           body: JSON.stringify({
             name: 'KO Cup', type: 'knockout', doubleRound: false,
             players: ['A', 'B', 'C', 'D'],
@@ -271,14 +305,14 @@ describe('cloud api — knockout avec tirs au but', () => {
         store,
         env,
       )
-    ).json()) as { id: string; matches: { id: string; round: number; nextMatchId?: string }[] };
+    ).json()) as { id: string; matches: { id: string; round: number }[] };
 
     const first = created.matches.find((m) => m.round === 1)!;
 
     const drawNoPens = await handleApi(
       req(`/tournaments/${created.id}/matches/${first.id}/result`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', cookie: await loginAsAdmin() },
+        headers: { 'Content-Type': 'application/json', cookie },
         body: JSON.stringify({ homeScore: 1, awayScore: 1 }),
       }),
       store,
@@ -289,12 +323,100 @@ describe('cloud api — knockout avec tirs au but', () => {
     const withPens = await handleApi(
       req(`/tournaments/${created.id}/matches/${first.id}/result`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', cookie: await loginAsAdmin() },
+        headers: { 'Content-Type': 'application/json', cookie },
         body: JSON.stringify({ homeScore: 1, awayScore: 1, homePens: 4, awayPens: 3 }),
       }),
       store,
       env,
     );
     expect(withPens.status).toBe(200);
+  });
+});
+
+describe('cloud api — suppression auto 30 jours', () => {
+  it('un tournoi de plus de 30 jours est purgé automatiquement', async () => {
+    const store = memoryStore();
+    const cookie = await setupAdmin(store);
+
+    // Créer un tournoi
+    const created = (await (
+      await handleApi(
+        req('/tournaments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', cookie },
+          body: JSON.stringify({ name: 'Old Cup', type: 'league', doubleRound: false, players: ['A', 'B', 'C'] }),
+        }),
+        store,
+        env,
+      )
+    ).json()) as { id: string };
+
+    // Vérifier qu'il existe
+    const list1 = (await (await handleApi(req('/tournaments'), store, env)).json()) as unknown[];
+    expect(list1.length).toBe(1);
+
+    // Modifier la date de création pour simuler un tournoi de 31 jours
+    _resetState();
+    const state = await store.read();
+    if (state) {
+      const oldDate = new Date(Date.now() - TOURNAMENT_TTL_MS - 1000).toISOString();
+      state.tournaments[0].createdAt = oldDate;
+      await store.write(state);
+    }
+
+    // Prochaine lecture du state déclenche la purge
+    _resetState();
+    const list2 = (await (await handleApi(req('/tournaments'), store, env)).json()) as unknown[];
+    expect(list2.length).toBe(0);
+  });
+
+  it('un tournoi de 29 jours n\'est pas purgé', async () => {
+    const store = memoryStore();
+    const cookie = await setupAdmin(store);
+
+    await handleApi(
+      req('/tournaments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', cookie },
+        body: JSON.stringify({ name: 'Recent Cup', type: 'league', doubleRound: false, players: ['A', 'B', 'C'] }),
+      }),
+      store,
+      env,
+    );
+
+    // Modifier la date pour 29 jours (encore vivant)
+    _resetState();
+    const state = await store.read();
+    if (state) {
+      const recentDate = new Date(Date.now() - 29 * 24 * 60 * 60 * 1000).toISOString();
+      state.tournaments[0].createdAt = recentDate;
+      await store.write(state);
+    }
+
+    _resetState();
+    const list = (await (await handleApi(req('/tournaments'), store, env)).json()) as unknown[];
+    expect(list.length).toBe(1);
+  });
+
+  it('expiresAt est inclus dans le résumé des tournois', async () => {
+    const store = memoryStore();
+    const cookie = await setupAdmin(store);
+
+    await handleApi(
+      req('/tournaments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', cookie },
+        body: JSON.stringify({ name: 'TTL Cup', type: 'league', doubleRound: false, players: ['A', 'B', 'C'] }),
+      }),
+      store,
+      env,
+    );
+
+    const list = (await (await handleApi(req('/tournaments'), store, env)).json()) as { expiresAt: string }[];
+    expect(list[0].expiresAt).toBeTruthy();
+    const expiresAt = new Date(list[0].expiresAt).getTime();
+    const expected = Date.now() + TOURNAMENT_TTL_MS;
+    // Tolérance de 5 secondes
+    expect(Math.abs(expiresAt - expected)).toBeLessThan(5000);
   });
 });

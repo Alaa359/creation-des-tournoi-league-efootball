@@ -7,7 +7,6 @@ export interface Player {
 
 export interface Match {
   id: string;
-  /** league : journée — knockout : tour (1 = premier tour) */
   round: number;
   homeId: string | null;
   awayId: string | null;
@@ -18,11 +17,8 @@ export interface Match {
   nextMatchId?: string;
   nextSlot?: 'home' | 'away';
   autoAdvance?: boolean;
-  /** knockout aller-retour : clé partagée par les deux manches d'une confrontation */
   tieKey?: string;
-  /** knockout aller-retour : 1 = aller, 2 = retour */
   leg?: 1 | 2;
-  /** phase du match (formats hybrides ; absent = déduit du type du tournoi) */
   phase?: 'league' | 'group' | 'knockout' | 'playoff';
 }
 
@@ -39,12 +35,23 @@ export interface StandingRow {
   points: number;
 }
 
+export interface UserPublic {
+  id: string;
+  name: string;
+  email: string;
+  role: 'admin' | 'user';
+  approved: boolean;
+  createdAt: string;
+}
+
 export interface TournamentSummary {
   id: string;
   name: string;
   type: TournamentType;
   createdAt: string;
   playerCount: number;
+  status?: 'pending' | 'active';
+  expiresAt?: string;
 }
 
 export interface Tournament {
@@ -55,13 +62,12 @@ export interface Tournament {
   createdAt: string;
   players: Player[];
   matches: Match[];
-  /** league-knockout : nombre de qualifiés pour les éliminations */
+  createdBy?: string;
+  status?: 'pending' | 'active';
+  rejectReason?: string;
   qualifiers?: number;
-  /** groups-knockout : nombre de groupes */
   groupsCount?: number;
-  /** groups-knockout : qualifiés par groupe (1 ou 2) */
   qualifiedPerGroup?: number;
-  /** groups-knockout : répartition des ids par groupe */
   groups?: string[][];
   standings?: StandingRow[];
   groupStandings?: StandingRow[][];
@@ -79,7 +85,7 @@ async function handle<T>(res: Response): Promise<T> {
       if (body.error) message = body.error;
       if (body.details?.length) message += ` — ${body.details.join(', ')}`;
     } catch {
-      // corps non JSON : message générique
+      // corps non JSON
     }
     throw new Error(message);
   }
@@ -96,19 +102,29 @@ function json(method: string, body: unknown): RequestInit {
 }
 
 export const api = {
-  me: (): Promise<{ admin: boolean }> => fetch('/api/auth/me').then((r) => r.json()),
+  // ── Auth ──
+  me: (): Promise<{ user: UserPublic | null }> =>
+    fetch('/api/auth/me', { credentials: 'same-origin' }).then((r) => r.json()),
 
-  login: (password: string): Promise<{ ok: true }> =>
-    fetch('/api/auth/login', json('POST', { password })).then((r) => handle<{ ok: true }>(r)),
+  register: (data: { name: string; email: string; password: string }): Promise<{ ok: true; user: UserPublic }> =>
+    fetch('/api/auth/register', json('POST', data)).then((r) => handle(r)),
+
+  login: (data: { email: string; password: string }): Promise<{ ok: true; user: UserPublic }> =>
+    fetch('/api/auth/login', json('POST', data)).then((r) => handle(r)),
 
   logout: (): Promise<{ ok: true }> =>
-    fetch('/api/auth/logout', json('POST', {})).then((r) => handle<{ ok: true }>(r)),
+    fetch('/api/auth/logout', json('POST', {})).then((r) => handle(r)),
 
+  // ── Mes tournois ──
+  myTournaments: (): Promise<TournamentSummary[]> =>
+    fetch('/api/my/tournaments', { credentials: 'same-origin' }).then((r) => handle(r)),
+
+  // ── Tournois publics ──
   listTournaments: (): Promise<TournamentSummary[]> =>
-    fetch('/api/tournaments').then((r) => handle<TournamentSummary[]>(r)),
+    fetch('/api/tournaments').then((r) => handle(r)),
 
   getTournament: (id: string): Promise<Tournament> =>
-    fetch(`/api/tournaments/${id}`).then((r) => handle<Tournament>(r)),
+    fetch(`/api/tournaments/${id}`).then((r) => handle(r)),
 
   createTournament: (input: {
     name: string;
@@ -119,7 +135,7 @@ export const api = {
     groupsCount?: number;
     qualifiedPerGroup?: number;
   }): Promise<Tournament> =>
-    fetch('/api/tournaments', json('POST', input)).then((r) => handle<Tournament>(r)),
+    fetch('/api/tournaments', json('POST', input)).then((r) => handle(r)),
 
   saveResult: (
     tournamentId: string,
@@ -127,21 +143,43 @@ export const api = {
     payload: { homeScore: number; awayScore: number; homePens?: number; awayPens?: number },
   ): Promise<Tournament> =>
     fetch(`/api/tournaments/${tournamentId}/matches/${matchId}/result`, json('PATCH', payload)).then(
-      (r) => handle<Tournament>(r),
+      (r) => handle(r),
     ),
 
   addPlayer: (tournamentId: string, name: string): Promise<Tournament> =>
     fetch(`/api/tournaments/${tournamentId}/players`, json('POST', { name })).then((r) =>
-      handle<Tournament>(r),
+      handle(r),
     ),
 
   removePlayer: (tournamentId: string, playerId: string): Promise<Tournament> =>
-    fetch(`/api/tournaments/${tournamentId}/players/${playerId}`, { method: 'DELETE' }).then((r) =>
-      handle<Tournament>(r),
+    fetch(`/api/tournaments/${tournamentId}/players/${playerId}`, { method: 'DELETE', credentials: 'same-origin' }).then((r) =>
+      handle(r),
     ),
 
   deleteTournament: (tournamentId: string): Promise<{ ok: true }> =>
     fetch(`/api/tournaments/${tournamentId}`, { method: 'DELETE', credentials: 'same-origin' }).then(
-      (r) => handle<{ ok: true }>(r),
+      (r) => handle(r),
     ),
+
+  // ── Admin ──
+  adminListUsers: (): Promise<UserPublic[]> =>
+    fetch('/api/admin/users', { credentials: 'same-origin' }).then((r) => handle(r)),
+
+  adminApproveUser: (userId: string): Promise<{ ok: true; user: UserPublic }> =>
+    fetch(`/api/admin/users/${userId}/approve`, json('PATCH', {})).then((r) => handle(r)),
+
+  adminRejectUser: (userId: string): Promise<{ ok: true; user: UserPublic }> =>
+    fetch(`/api/admin/users/${userId}/reject`, json('PATCH', {})).then((r) => handle(r)),
+
+  adminDeleteUser: (userId: string): Promise<{ ok: true }> =>
+    fetch(`/api/admin/users/${userId}`, { method: 'DELETE', credentials: 'same-origin' }).then((r) => handle(r)),
+
+  adminListTournaments: (): Promise<(TournamentSummary & { createdBy?: UserPublic; rejectReason?: string })[]> =>
+    fetch('/api/admin/tournaments', { credentials: 'same-origin' }).then((r) => handle(r)),
+
+  adminApproveTournament: (id: string): Promise<{ ok: true }> =>
+    fetch(`/api/admin/tournaments/${id}/approve`, json('PATCH', {})).then((r) => handle(r)),
+
+  adminRejectTournament: (id: string, reason?: string): Promise<{ ok: true }> =>
+    fetch(`/api/admin/tournaments/${id}/reject`, json('PATCH', { reason })).then((r) => handle(r)),
 };
